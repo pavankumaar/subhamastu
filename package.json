@@ -1,0 +1,39 @@
+{
+  "name": "wedding-planner-web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:full": "node scripts/dev.mjs",
+    "dev:client": "vite",
+    "server": "node --env-file-if-exists=.env server/index.js",
+    "start": "node --env-file-if-exists=.env server/index.js",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "engines": {
+    "node": "22.x"
+  },
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.3.0",
+    "lucide-react": "1.72.0",
+    "mongodb": "6.19.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "autoprefixer": "10.6.2",
+    "oxlint": "^1.90.0",
+    "postcss": "8.5.32",
+    "tailwindcss": "3.4.17",
+    "typescript": "~7.0.2",
+    "vite": "^8.3.6"
+  }
+}

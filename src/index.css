@@ -1,0 +1,183 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    @apply bg-[#F4F0E8] font-body text-charcoal antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display;
+  }
+
+  input,
+  select,
+  textarea {
+    @apply w-full rounded-xl border border-border-warm bg-white px-3 py-2 text-sm text-charcoal outline-none transition-shadow duration-200 ease-out;
+  }
+
+  select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236f5f55' stroke-width='2.25' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+    background-position: right 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 0.9rem;
+    padding-right: 2.25rem;
+  }
+
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    box-shadow: 0 0 0 3px rgba(212, 140, 132, 0.2);
+    border-color: #d48c84;
+  }
+
+  button {
+    @apply transition-all duration-200 ease-out;
+  }
+
+  button:active {
+    transform: scale(0.97);
+  }
+}
+
+@layer components {
+  .editorial-card {
+    @apply relative rounded-2xl border border-border-warm bg-ivory-card shadow-card-warm transition-all duration-300;
+  }
+
+  .editorial-card:hover {
+    box-shadow: 0 4px 18px rgba(31, 28, 25, 0.06);
+  }
+
+  .screen-animate {
+    animation: fadeSlideUp 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .custom-check {
+    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .custom-check:active {
+    transform: scale(0.88);
+  }
+
+  .wedding-banner {
+    @apply relative overflow-hidden rounded-2xl border border-champagne-border/80 bg-gradient-to-br from-white via-champagne-light/65 to-blush-soft/45 p-4 shadow-card-warm sm:p-5;
+  }
+
+  .wedding-banner::after {
+    content: '';
+    position: absolute;
+    inset: -45% auto auto -14%;
+    width: 180px;
+    height: 180px;
+    border-radius: 9999px;
+    border: 1px dashed rgba(197, 160, 89, 0.26);
+    pointer-events: none;
+  }
+
+  .festive-hero {
+    @apply rounded-2xl border border-border-warm bg-ivory-card p-4 shadow-card-warm sm:p-5;
+  }
+
+  .gopuram-divider {
+    height: 6px;
+    background: repeating-linear-gradient(
+      90deg,
+      #c69214 0px,
+      #c69214 8px,
+      #b81d24 8px,
+      #b81d24 16px,
+      #2e6f40 16px,
+      #2e6f40 24px
+    );
+    opacity: 0.85;
+  }
+
+  .wedding-emoji-outline {
+    @apply text-xs tracking-[0.16em] text-muted-taupe sm:text-sm;
+  }
+
+  .wedding-soft-float {
+    animation: lampFloat 3.6s ease-in-out infinite;
+  }
+
+  .muggu-panel {
+    background-color: #f4f0e8;
+  }
+
+  .clean-scroll::-webkit-scrollbar {
+    width: 3px;
+    height: 3px;
+  }
+
+  .clean-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .clean-scroll::-webkit-scrollbar-thumb {
+    background: rgba(181, 137, 56, 0.22);
+    border-radius: 9999px;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar {
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes lampFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.animate-modal-in {
+  animation: modalIn 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+}
