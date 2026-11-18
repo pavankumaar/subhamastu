@@ -1,4 +1,4 @@
-import { AlertTriangle, ArrowUp, CalendarDays, RotateCcw, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowUp, CalendarDays, Mic, RotateCcw, Sparkles, Square } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   executeAssistantQuery,
@@ -8,6 +8,7 @@ import {
 import { PaymentCard, TodoCard, VendorCard } from '../components/Cards'
 import { PageHeader } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
+import { useSpeechInput } from '../hooks/useSpeechInput'
 import type { OpenItem } from '../navigation'
 import { formatDate } from '../utils/weddingFormat'
 
@@ -119,6 +120,7 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
   const [historyError, setHistoryError] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const voice = useSpeechInput(setInput)
 
   useEffect(() => {
     let isMounted = true
@@ -174,6 +176,7 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
   function submitText(text: string) {
     const query = text.trim()
     if (!query || isWorking) return
+    if (voice.isListening) voice.cancel()
     setInput('')
     setMessages((current) => [...current, { id: createId(), role: 'user', text: query, cards: [] }])
     void ask(query)
@@ -284,17 +287,49 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
           ))}
         </div>
 
+        {voice.error ? (
+          <p role="status" className="rounded-xl bg-blush-soft px-3 py-2 text-xs leading-snug text-blush-deep">
+            {voice.error}
+          </p>
+        ) : voice.isListening ? (
+          <p role="status" className="flex items-center gap-2 px-1 text-xs font-medium text-blush-deep">
+            <span className="h-2 w-2 animate-pulse rounded-full bg-blush-deep" />
+            Listening… speak now, then tap Send. Tap ■ to stop.
+          </p>
+        ) : null}
+
         <form onSubmit={submitQuery} className="flex items-center gap-2">
           <input
             ref={inputRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask Mitra AI…"
+            placeholder={voice.isListening ? 'Listening…' : 'Ask Mitra AI…'}
             enterKeyHint="send"
             autoComplete="off"
             maxLength={2000}
-            className="flex-1 rounded-full bg-silk px-4 py-3 text-base"
+            className={`min-w-0 flex-1 rounded-full bg-silk px-4 py-3 text-base ${voice.isListening ? 'border-blush-deep' : ''}`}
           />
+          {voice.isSupported ? (
+            <button
+              type="button"
+              onClick={() => (voice.isListening ? voice.stop() : voice.start(input))}
+              disabled={isWorking}
+              className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border disabled:opacity-50 ${
+                voice.isListening ? 'border-blush-deep bg-blush-soft text-blush-deep' : 'border-brass-line bg-silk text-charcoal'
+              }`}
+              aria-label={voice.isListening ? 'Stop voice input' : 'Speak your message'}
+              aria-pressed={voice.isListening}
+            >
+              {voice.isListening ? (
+                <>
+                  <span className="absolute inset-0 animate-ping rounded-full bg-blush-deep/20" />
+                  <Square className="h-4 w-4 fill-current" />
+                </>
+              ) : (
+                <Mic className="h-5 w-5" />
+              )}
+            </button>
+          ) : null}
           <button
             type="submit"
             disabled={isWorking || !input.trim()}
