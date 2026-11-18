@@ -1,6 +1,6 @@
 import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { PaymentCard, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
+import { PaymentCard, SectionAddButton, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
 import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader, SheetModal } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
 import type { OpenItem } from '../navigation'
@@ -15,13 +15,13 @@ import {
 
 type ComposerKind = 'invite' | 'todo' | 'buy' | 'payment' | 'vendor'
 
-const composerTabs: Array<[ComposerKind, string]> = [
-  ['invite', 'Invitee'],
-  ['todo', 'To-Do'],
-  ['buy', 'Item to buy'],
-  ['payment', 'Payment'],
-  ['vendor', 'Vendor'],
-]
+const composerTitles: Record<ComposerKind, string> = {
+  invite: 'Add invitees',
+  todo: 'Add to-do',
+  buy: 'Add item to buy',
+  payment: 'Add payment',
+  vendor: 'Add vendor',
+}
 
 interface ComposerState {
   title: string
@@ -320,13 +320,13 @@ export function InviteChecklistScreen({
         title={selectedEvent.name}
         subtitle={subtitle}
         action={
-          <div className="flex items-center gap-3">
+          <div className="-mr-2 flex items-center">
             <button
               type="button"
               onClick={() => startEditEvent(selectedEvent)}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-charcoal"
+              className="inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-charcoal active:bg-silk"
             >
-              <Pencil className="h-3.5 w-3.5" />
+              <Pencil className="h-4 w-4" />
               Edit
             </button>
             <button
@@ -339,41 +339,35 @@ export function InviteChecklistScreen({
                 removeGuestEvent(selectedEvent.id)
                 closeEvent()
               }}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-blush-deep"
+              className="inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2.5 text-sm font-semibold text-blush-deep active:bg-blush-soft"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              {confirmRemove ? 'Tap to confirm' : 'Remove'}
+              <Trash2 className="h-4 w-4" />
+              {confirmRemove ? 'Confirm' : 'Remove'}
             </button>
           </div>
         }
       />
       {confirmRemove ? (
-        <p className="-mt-2 rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">
-          Removing this event also deletes its linked to-dos, items to buy, payments and vendors.
-        </p>
+        <div className="-mt-1 flex items-start justify-between gap-2 rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">
+          <span>Removing this event also deletes its linked to-dos, items to buy, payments and vendors.</span>
+          <button type="button" onClick={() => setConfirmRemove(false)} className="shrink-0 font-semibold underline">
+            Cancel
+          </button>
+        </div>
       ) : null}
 
-      <div className="no-scrollbar -mx-0.5 flex gap-1.5 overflow-x-auto px-0.5">
-        {composerTabs.map(([kind, label]) => (
-          <button
-            key={kind}
-            type="button"
-            onClick={() => openComposer(kind)}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brass-line bg-silk px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-champagne/60"
-          >
-            <Plus className="h-3.5 w-3.5 text-champagne" />
-            {label}
-          </button>
-        ))}
-      </div>
-
-      <div className="space-y-2">
+      <div className="divide-y divide-brass-line">
+      <div className="space-y-2.5 pb-4 pt-1">
         <SectionTitle
           title="Notes"
           action={
-            notesDraft === null ? (
-              <button type="button" onClick={() => setNotesDraft(selectedEvent.notes ?? '')} className="text-xs font-semibold text-blush-deep">
-                {selectedEvent.notes ? 'Edit notes' : '+ Add'}
+            notesDraft === null && selectedEvent.notes ? (
+              <button
+                type="button"
+                onClick={() => setNotesDraft(selectedEvent.notes ?? '')}
+                className="-my-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-blush-deep"
+              >
+                Edit notes
               </button>
             ) : null
           }
@@ -389,7 +383,7 @@ export function InviteChecklistScreen({
               className="resize-y bg-ivory"
             />
             <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setNotesDraft(null)} className="rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-taupe">
+              <button type="button" onClick={() => setNotesDraft(null)} className="min-h-[40px] rounded-xl px-4 text-sm font-semibold text-muted-taupe">
                 Cancel
               </button>
               <button
@@ -403,7 +397,7 @@ export function InviteChecklistScreen({
                   })
                   setNotesDraft(null)
                 }}
-                className="rounded-xl bg-charcoal px-3 py-1.5 text-xs font-semibold text-ivory"
+                className="min-h-[40px] rounded-xl bg-charcoal px-4 text-sm font-semibold text-ivory"
               >
                 Save notes
               </button>
@@ -414,43 +408,41 @@ export function InviteChecklistScreen({
             {selectedEvent.notes}
           </p>
         ) : (
-          <p className="px-0.5 text-xs text-muted-taupe">No notes yet.</p>
+          <SectionAddButton label="Add notes" onClick={() => setNotesDraft('')} />
         )}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 py-4">
         <SectionTitle title="Invitees" count={selectedEvent.invitees.length} action={<span className="text-xs text-muted-taupe">{confirmedCount} confirmed</span>} />
-        <div className="space-y-2 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
-          {selectedEvent.invitees.length > 0 ? (
+        {selectedEvent.invitees.length > 0 ? (
+        <div className="space-y-1 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-taupe" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-taupe" />
               <input
+                type="search"
                 value={inviteSearch}
                 onChange={(event) => setInviteSearch(event.target.value)}
                 placeholder="Search invitees"
-                className="bg-ivory py-1.5 pl-8 text-sm"
+                className="bg-ivory py-2 pl-9 text-sm"
               />
             </div>
-          ) : null}
-          {selectedEvent.invitees.length === 0 ? (
-            <p className="py-1 text-xs text-muted-taupe">No invitees yet. Tap “+ Invitee” above.</p>
-          ) : visibleInvitees.length === 0 ? (
-            <p className="py-1 text-xs text-muted-taupe">No invitee matches “{inviteSearch}”.</p>
+          {visibleInvitees.length === 0 ? (
+            <p className="py-2 text-xs text-muted-taupe">No invitee matches “{inviteSearch}”.</p>
           ) : (
             <div className="divide-y divide-brass-line/60">
               {visibleInvitees.map((invitee) => (
-                <div key={invitee.id} className="flex items-center justify-between gap-2 py-1.5">
+                <div key={invitee.id} className="flex items-center justify-between gap-1">
                   <button
                     type="button"
                     onClick={() => toggleEventInvitee(selectedEvent.id, invitee.id)}
-                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
+                    className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3 text-left"
                   >
                     <span
-                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border ${
                         invitee.completed ? 'border-sage bg-sage text-white' : 'border-champagne/60'
                       }`}
                     >
-                      {invitee.completed ? <Check className="h-3 w-3 stroke-[2.5]" /> : null}
+                      {invitee.completed ? <Check className="h-3.5 w-3.5 stroke-[2.5]" /> : null}
                     </span>
                     <span className={`truncate text-sm ${invitee.completed ? 'text-muted-taupe line-through' : 'text-charcoal'}`}>
                       {invitee.name}
@@ -459,20 +451,25 @@ export function InviteChecklistScreen({
                   <button
                     type="button"
                     onClick={() => removeEventInvitee(selectedEvent.id, invitee.id)}
-                    className="p-1 text-muted-taupe hover:text-blush-deep"
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-taupe hover:text-blush-deep"
                     aria-label={`Remove ${invitee.name}`}
                   >
-                    <X className="h-3.5 w-3.5" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
               ))}
             </div>
           )}
         </div>
+        ) : null}
+        <SectionAddButton label="Add invitees" onClick={() => openComposer('invite')} />
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 py-4">
         <SectionTitle title="Items to buy" count={eventBuyItems.length} />
+        {eventBuyItems.map((todo) => (
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+        ))}
         <form
           onSubmit={(formEvent) => {
             formEvent.preventDefault()
@@ -485,29 +482,30 @@ export function InviteChecklistScreen({
           <input
             value={buyDraft}
             onChange={(event) => setBuyDraft(event.target.value)}
-            placeholder="e.g. Talambralu pearls, pattu saree"
-            className="flex-1 py-2 text-sm"
+            placeholder="Add item, e.g. Talambralu pearls"
+            enterKeyHint="done"
+            className="min-h-[44px] flex-1 text-sm"
           />
-          <button type="submit" className="rounded-xl bg-charcoal px-3 py-2 text-xs font-semibold text-ivory">
-            Add
+          <button
+            type="submit"
+            aria-label="Add item to buy"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-charcoal text-ivory"
+          >
+            <Plus className="h-5 w-5" />
           </button>
         </form>
-        {eventBuyItems.map((todo) => (
-          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
-        ))}
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 py-4">
         <SectionTitle title="To-Dos" count={eventTodos.length} />
-        {eventTodos.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
         {eventTodos.map((todo) => (
           <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
         ))}
+        <SectionAddButton label="Add to-do" onClick={() => openComposer('todo')} />
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 py-4">
         <SectionTitle title="Payments" count={eventPayments.length} />
-        {eventPayments.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
         {eventPayments.map((expense) => (
           <PaymentCard
             key={expense.id}
@@ -519,11 +517,11 @@ export function InviteChecklistScreen({
             onMarkPaid={() => markExpensePaid(expense.id)}
           />
         ))}
+        <SectionAddButton label="Add payment" onClick={() => openComposer('payment')} />
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-2.5 pt-4">
         <SectionTitle title="Vendors" count={eventVendors.length} />
-        {eventVendors.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
         {eventVendors.map((vendor) => (
           <VendorCard
             key={vendor.id}
@@ -532,29 +530,13 @@ export function InviteChecklistScreen({
             onMarkPaid={() => markVendorPaid(vendor.id)}
           />
         ))}
+        <SectionAddButton label="Add vendor" onClick={() => openComposer('vendor')} />
+      </div>
       </div>
 
       {composerKind ? (
-        <SheetModal title={`Add to ${selectedEvent.name}`} onClose={closeComposer}>
+        <SheetModal title={`${composerTitles[composerKind]} · ${selectedEvent.name}`} onClose={closeComposer}>
           <form onSubmit={submitComposer} className="space-y-3">
-            <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
-              {composerTabs.map(([kind, label]) => (
-                <button
-                  key={kind}
-                  type="button"
-                  onClick={() => {
-                    setComposerKind(kind)
-                    setComposerError('')
-                  }}
-                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                    composerKind === kind ? 'bg-charcoal text-ivory' : 'border border-brass-line bg-silk text-charcoal'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
             {composerKind === 'invite' ? (
               <div className="space-y-2">
                 <FieldLabel>Guest / family name *</FieldLabel>
