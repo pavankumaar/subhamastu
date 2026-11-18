@@ -27,6 +27,9 @@ function money(value, label) {
   return Math.round(parsed)
 }
 
+// The user's local "today" for the actions currently being applied (set by applyAssistantActions).
+let activeToday = ''
+
 function isoDate(value, fallbackToday = true) {
   const raw = text(value)
   if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(new Date(raw).getTime())) {
@@ -38,7 +41,7 @@ function isoDate(value, fallbackToday = true) {
       return parsed.toISOString().slice(0, 10)
     }
   }
-  return fallbackToday ? new Date().toISOString().slice(0, 10) : ''
+  return fallbackToday ? activeToday || new Date().toISOString().slice(0, 10) : ''
 }
 
 function priority(value) {
@@ -468,7 +471,8 @@ export function describeTools() {
 
 // Applies actions in order on a copy of the state. Later actions can reference
 // items created by earlier ones by name (e.g. create an event, then add a task to it).
-export function applyAssistantActions(actions, currentState) {
+export function applyAssistantActions(actions, currentState, options = {}) {
+  activeToday = typeof options.today === 'string' ? options.today : ''
   let state = structuredClone(currentState)
   if (!isRecord(state.guests)) state.guests = { events: [] }
   if (!Array.isArray(state.guests.events)) state.guests.events = []

@@ -244,17 +244,19 @@ app.post('/api/assistant/reply', async (request, response) => {
     await auth.consumeAiQuota(request.user.id, assistantDailyLimit)
     const currentState = await getPlannerState(request.user.id)
     const history = await listAssistantMessages(sessionId)
+    const clientDate = normalizeClientDate(payload.clientDate)
     const conversation = buildAssistantConversation({
       query,
       plannerState: currentState,
       history,
       contextWindow: assistantContextWindow,
       user: request.user,
+      clientDate,
     })
 
     const rawReply = await requestModelReply(conversation, provider)
     const envelope = parseAssistantEnvelope(rawReply)
-    const actionResult = applyAssistantActions(envelope.actions, currentState)
+    const actionResult = applyAssistantActions(envelope.actions, currentState, { today: clientDate })
 
     if (actionResult.appliedActions.length > 0) {
       await savePlannerState(request.user.id, actionResult.state)
@@ -326,6 +328,14 @@ function normalizeText(value) {
 // One private Mitra conversation per user, derived from the login rather than client input.
 function assistantSessionIdFor(user) {
   return `user-${user.id}`
+}
+
+// The phone's local date (YYYY-MM-DD). Accepted only if within a day of the server's UTC date.
+function normalizeClientDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return ''
+  const parsed = Date.parse(`${value}T00:00:00Z`)
+  if (Number.isNaN(parsed)) return ''
+  return Math.abs(parsed - Date.now()) <= 2 * 24 * 60 * 60 * 1000 ? value : ''
 }
 
 function plannerDocumentIdFor(userId) {
@@ -552,9 +562,9 @@ function isValidPlannerState(state) {
   )
 }
 
-function buildAssistantConversation({ query, plannerState, history, contextWindow, user }) {
-  const today = new Date().toISOString().slice(0, 10)
-  const weekday = new Date().toLocaleDateString('en-US', { weekday: 'long' })
+function buildAssistantConversation({ query, plannerState, history, contextWindow, user, clientDate }) {
+  const today = clientDate || new Date().toISOString().slice(0, 10)
+  const weekday = new Date(`${today}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
 
   const systemInstruction = [
     'You are Kalyana Mitra, the wedding planning agent for a South Indian (Telugu) wedding.',

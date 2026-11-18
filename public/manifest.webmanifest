@@ -1,0 +1,14 @@
+{
+  "name": "Subhamastu · Wedding Planner",
+  "short_name": "Subhamastu",
+  "description": "A private wedding planner for tasks, payments, ceremonies and vendors.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F0E8",
+  "theme_color": "#F4F0E8",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

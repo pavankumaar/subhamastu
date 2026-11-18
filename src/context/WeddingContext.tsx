@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { authFetch } from '../auth/session'
 import { initialWeddingData } from '../data/initialWeddingData'
 import { WeddingContext, type WeddingContextValue } from './WeddingStore'
@@ -21,7 +21,7 @@ import type {
   UpdateVendorInput,
   WeddingPlannerData,
 } from '../types/wedding'
-import { expenseStatusFor, sanitizePhone } from '../utils/weddingFormat'
+import { expenseStatusFor, sanitizePhone, todayString } from '../utils/weddingFormat'
 
 const plannerStateEndpoint = '/api/planner/state'
 const saveDebounceMs = 350
@@ -40,7 +40,7 @@ function createId(prefix: string) {
 }
 
 function getCurrentDateString() {
-  return new Date().toISOString().slice(0, 10)
+  return todayString()
 }
 
 function nextStatus(current: ExpenseStatus) {
@@ -379,6 +379,13 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
   const [hasLoadedRemote, setHasLoadedRemote] = useState(false)
   const [saveRetryTick, setSaveRetryTick] = useState(0)
   const [syncError, setSyncError] = useState('')
+  const dataRef = useRef(data)
+  // JSON of the planner as last loaded from / saved to the server; differs from `data` while edits are unsaved.
+  const lastSyncedJsonRef = useRef('')
+
+  useEffect(() => {
+    dataRef.current = data
+  })
 
   useEffect(() => {
     let isMounted = true
@@ -388,6 +395,7 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
       try {
         const remoteState = await fetchPlannerState()
         if (isMounted) {
+          lastSyncedJsonRef.current = JSON.stringify(remoteState)
           setData(remoteState)
           setHasLoadedRemote(true)
           setSyncError('')
@@ -418,11 +426,16 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
     if (isHydrating || !hasLoadedRemote) {
       return
     }
+    const json = JSON.stringify(data)
+    if (json === lastSyncedJsonRef.current) {
+      return
+    }
 
     let retryTimeout: number | undefined
     const timeout = window.setTimeout(async () => {
       try {
         await persistPlannerState(data)
+        lastSyncedJsonRef.current = json
         setSyncError('')
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unable to persist planner state.'
@@ -436,6 +449,35 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
       window.clearTimeout(retryTimeout)
     }
   }, [data, isHydrating, hasLoadedRemote, saveRetryTick])
+
+  // Coming back to the app (phone app switch, another device edited): reload the planner,
+  // but never while local edits are still unsaved.
+  useEffect(() => {
+    if (!hasLoadedRemote) {
+      return
+    }
+    const hasUnsavedEdits = () => JSON.stringify(dataRef.current) !== lastSyncedJsonRef.current
+
+    async function refreshIfIdle() {
+      if (document.visibilityState !== 'visible' || hasUnsavedEdits()) {
+        return
+      }
+      try {
+        const remoteState = await fetchPlannerState()
+        const json = JSON.stringify(remoteState)
+        if (hasUnsavedEdits() || json === lastSyncedJsonRef.current) {
+          return
+        }
+        lastSyncedJsonRef.current = json
+        setData(remoteState)
+      } catch {
+        // Keep showing the current data; the next resume will try again.
+      }
+    }
+
+    document.addEventListener('visibilitychange', refreshIfIdle)
+    return () => document.removeEventListener('visibilitychange', refreshIfIdle)
+  }, [hasLoadedRemote])
 
   const budgetMetrics = useMemo<BudgetMetrics>(() => {
     const totalBudget = data.event.totalBudget

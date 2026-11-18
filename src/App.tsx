@@ -1,8 +1,9 @@
 import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, LogOut, NotepadText, Users, X } from 'lucide-react'
-import { useCallback, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { FieldLabel, SheetModal } from './components/ScreenChrome'
 import { useWedding } from './context/useWedding'
-import type { ItemTab } from './navigation'
+import { useBackLayer } from './hooks/useBackLayer'
+import type { ItemOrigin, ItemTab } from './navigation'
 import { BudgetScreen } from './screens/BudgetScreen'
 import { ChatScreen } from './screens/ChatScreen'
 import { DirectoryScreen } from './screens/DirectoryScreen'
@@ -76,16 +77,17 @@ interface AppProps {
 function App({ profile, onLogout }: AppProps) {
   const { data, addExpense, addTodo, addGuestEvent, addVendor, syncError } = useWedding()
   const [activeTab, setActiveTab] = useState<AppTab>('todos')
-  const [focus, setFocus] = useState<{ tab: ItemTab; id: string; nonce: number } | null>(null)
+  const [focus, setFocus] = useState<{ tab: ItemTab; id: string; nonce: number; origin?: ItemOrigin } | null>(null)
   const [isQuickActionOpen, setQuickActionOpen] = useState(false)
   const [isQuickActionVisible, setQuickActionVisible] = useState(true)
   const [quickError, setQuickError] = useState('')
   const [form, setForm] = useState<QuickForm>(emptyQuickForm)
+  const [confirmLogout, setConfirmLogout] = useState(false)
 
   const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
 
-  const openItem = useCallback((tab: ItemTab, id: string) => {
-    setFocus((current) => ({ tab, id, nonce: (current?.nonce ?? 0) + 1 }))
+  const openItem = useCallback((tab: ItemTab, id: string, origin?: ItemOrigin) => {
+    setFocus((current) => ({ tab, id, origin, nonce: (current?.nonce ?? 0) + 1 }))
     setActiveTab(tab)
   }, [])
 
@@ -94,6 +96,27 @@ function App({ profile, onLogout }: AppProps) {
     setActiveTab(tab)
     setQuickActionVisible(tab !== 'chat')
   }
+
+  // Closing a detail page opened from elsewhere (an event, a chat card) returns to where it came from.
+  function returnFromItem() {
+    const origin = focus?.origin
+    if (!origin) return
+    if (origin.id && origin.tab !== 'chat') {
+      setFocus((current) => ({ tab: origin.tab as ItemTab, id: origin.id ?? '', nonce: (current?.nonce ?? 0) + 1 }))
+      setActiveTab(origin.tab)
+    } else {
+      switchTab(origin.tab)
+    }
+  }
+
+  // Back from any other tab returns to the To-Do home tab before leaving the site.
+  useBackLayer(activeTab !== 'todos', () => switchTab('todos'), 0)
+
+  useEffect(() => {
+    if (!confirmLogout) return
+    const timer = window.setTimeout(() => setConfirmLogout(false), 3000)
+    return () => window.clearTimeout(timer)
+  }, [confirmLogout])
 
   function openQuickAction() {
     setForm(emptyQuickForm())
@@ -168,6 +191,7 @@ function App({ profile, onLogout }: AppProps) {
 
   const focusFor = (tab: ItemTab) => (focus?.tab === tab ? focus : null)
   const screenKey = (tab: ItemTab) => `${tab}-${focusFor(tab)?.nonce ?? 0}`
+  const closedFor = (tab: ItemTab) => (focusFor(tab)?.origin ? returnFromItem : undefined)
 
   const activeScreen =
     activeTab === 'payments' ? (
@@ -175,6 +199,7 @@ function App({ profile, onLogout }: AppProps) {
         key={screenKey('payments')}
         initialItemId={focusFor('payments')?.id}
         onOpenItem={openItem}
+        onItemClosed={closedFor('payments')}
         onQuickActionVisibilityChange={setQuickActionVisible}
       />
     ) : activeTab === 'chat' ? (
@@ -184,18 +209,21 @@ function App({ profile, onLogout }: AppProps) {
         key={screenKey('invites')}
         initialItemId={focusFor('invites')?.id}
         onOpenItem={openItem}
+        onItemClosed={closedFor('invites')}
         onQuickActionVisibilityChange={setQuickActionVisible}
       />
     ) : activeTab === 'vendors' ? (
       <DirectoryScreen
         key={screenKey('vendors')}
         initialItemId={focusFor('vendors')?.id}
+        onItemClosed={closedFor('vendors')}
         onQuickActionVisibilityChange={setQuickActionVisible}
       />
     ) : (
       <TodoTimelineScreen
         key={screenKey('todos')}
         initialItemId={focusFor('todos')?.id}
+        onItemClosed={closedFor('todos')}
         onQuickActionVisibilityChange={setQuickActionVisible}
       />
     )
@@ -236,7 +264,7 @@ function App({ profile, onLogout }: AppProps) {
           <span className="border-l border-brass-line pl-2 text-[11px] font-medium leading-none text-muted-taupe">Wedding Planner</span>
           <div className="ml-auto flex items-center gap-1">
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-brass-line bg-silk text-sm font-bold text-charcoal"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-brass-line bg-silk text-sm font-bold text-charcoal"
               title={`Signed in as ${profile.name}`}
               aria-label={`Signed in as ${profile.name}`}
             >
@@ -244,12 +272,15 @@ function App({ profile, onLogout }: AppProps) {
             </span>
             <button
               type="button"
-              onClick={onLogout}
-              className="flex h-8 w-8 items-center justify-center rounded-full text-muted-taupe hover:bg-silk hover:text-charcoal"
-              aria-label="Log out"
+              onClick={() => (confirmLogout ? onLogout() : setConfirmLogout(true))}
+              className={`flex h-10 items-center justify-center gap-1 rounded-full ${
+                confirmLogout ? 'bg-blush-soft px-3 text-xs font-semibold text-blush-deep' : 'w-10 text-muted-taupe hover:bg-silk hover:text-charcoal'
+              }`}
+              aria-label={confirmLogout ? 'Tap again to log out' : 'Log out'}
               title="Log out"
             >
               <LogOut className="h-4 w-4" />
+              {confirmLogout ? 'Log out?' : null}
             </button>
           </div>
         </header>
@@ -278,7 +309,7 @@ function App({ profile, onLogout }: AppProps) {
           <button
             type="button"
             onClick={openQuickAction}
-            className="absolute bottom-[84px] right-4 z-[2147483100] inline-flex items-center gap-1.5 rounded-full bg-sindoor px-4 py-2.5 text-sm font-semibold text-white shadow-float"
+            className="absolute bottom-[calc(80px+env(safe-area-inset-bottom))] right-4 z-[2147483100] inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-sindoor px-4 text-sm font-semibold text-white shadow-float"
             aria-label={`Add ${activeTabConfig?.addLabel ?? 'item'}`}
           >
             <CirclePlus className="h-4 w-4" />
@@ -286,7 +317,7 @@ function App({ profile, onLogout }: AppProps) {
           </button>
         ) : null}
 
-        <nav className="z-[2147483000] flex h-[68px] shrink-0 items-center justify-around rounded-t-[22px] border border-b-0 border-brass-line bg-silk/95 px-2 backdrop-blur-md">
+        <nav className="z-[2147483000] flex shrink-0 items-center justify-around rounded-t-[22px] border border-b-0 border-brass-line bg-silk/95 px-2 pb-[env(safe-area-inset-bottom)] pt-1 backdrop-blur-md [min-height:calc(68px+env(safe-area-inset-bottom))]">
           {navButton('todos')}
           {navButton('payments')}
           <div className="relative flex flex-col items-center">
@@ -431,7 +462,7 @@ function App({ profile, onLogout }: AppProps) {
                         <button
                           type="button"
                           onClick={() => setForm({ ...form, members: form.members.filter((entry) => entry !== member) })}
-                          className="text-muted-taupe"
+                          className="-my-2 -mr-2 flex h-8 w-8 items-center justify-center rounded-full text-muted-taupe active:bg-silk"
                           aria-label={`Remove ${member}`}
                         >
                           <X className="h-3 w-3" />

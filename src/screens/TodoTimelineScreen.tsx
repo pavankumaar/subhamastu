@@ -3,11 +3,13 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { TodoCard } from '../components/Cards'
 import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
+import { useBackLayer } from '../hooks/useBackLayer'
 import type { TodoItem, TodoKind, TodoPriority } from '../types/wedding'
 
 interface TodoTimelineScreenProps {
   onQuickActionVisibilityChange?: (visible: boolean) => void
   initialItemId?: string
+  onItemClosed?: () => void
 }
 
 interface TodoFormState {
@@ -34,11 +36,12 @@ function formFromTodo(todo: TodoItem): TodoFormState {
   }
 }
 
-// Tasks with due dates first (nearest first), then undated tasks in their original order.
+// Open items first, completed items sink to the bottom. Within each group: due dates first (nearest first).
 function sortTodos(todos: TodoItem[]) {
   return todos
     .map((todo, index) => ({ todo, index }))
     .sort((left, right) => {
+      if (left.todo.completed !== right.todo.completed) return left.todo.completed ? 1 : -1
       const leftDate = left.todo.dueDate ?? ''
       const rightDate = right.todo.dueDate ?? ''
       if (leftDate && !rightDate) return -1
@@ -49,13 +52,14 @@ function sortTodos(todos: TodoItem[]) {
     .map(({ todo }) => todo)
 }
 
-export function TodoTimelineScreen({ onQuickActionVisibilityChange, initialItemId }: TodoTimelineScreenProps) {
+export function TodoTimelineScreen({ onQuickActionVisibilityChange, initialItemId, onItemClosed }: TodoTimelineScreenProps) {
   const { data, taskCompletion, toggleTodo, updateTodo, removeTodo } = useWedding()
   const initialTodo = initialItemId ? data.todos.find((todo) => todo.id === initialItemId) : undefined
 
   const [selectedId, setSelectedId] = useState(initialTodo?.id ?? '')
   const [form, setForm] = useState<TodoFormState | null>(() => (initialTodo ? formFromTodo(initialTodo) : null))
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const eventNameById = useMemo(
     () => new Map(data.guests.events.map((event) => [event.id, event.name])),
@@ -64,6 +68,7 @@ export function TodoTimelineScreen({ onQuickActionVisibilityChange, initialItemI
   const todos = useMemo(() => sortTodos(data.todos.filter((todo) => !isInviteTodo(todo.title))), [data.todos])
   const selectedTodo = todos.find((todo) => todo.id === selectedId) ?? null
   const isDetail = Boolean(selectedTodo && form)
+  useBackLayer(isDetail, () => closeTodo())
   const completionPercent =
     taskCompletion.total === 0 ? 0 : Math.round((taskCompletion.completed / taskCompletion.total) * 100)
 
@@ -83,6 +88,8 @@ export function TodoTimelineScreen({ onQuickActionVisibilityChange, initialItemI
     setSelectedId('')
     setForm(null)
     setError('')
+    setConfirmDelete(false)
+    onItemClosed?.()
   }
 
   function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -119,13 +126,17 @@ export function TodoTimelineScreen({ onQuickActionVisibilityChange, initialItemI
             <button
               type="button"
               onClick={() => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true)
+                  return
+                }
                 removeTodo(selectedTodo.id)
                 closeTodo()
               }}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-blush-deep"
+              className="inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2 text-sm font-semibold text-blush-deep active:bg-blush-soft"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
+              <Trash2 className="h-4 w-4" />
+              {confirmDelete ? 'Tap again to delete' : 'Delete'}
             </button>
           }
         />

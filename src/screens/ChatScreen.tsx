@@ -53,7 +53,7 @@ function ChatCards({ cards, onOpenItem }: { cards: AssistantCard[]; onOpenItem?:
             key={key}
             vendor={vendor}
             eventName={eventName(vendor.eventId)}
-            onOpen={() => onOpenItem?.('vendors', vendor.id)}
+            onOpen={() => onOpenItem?.('vendors', vendor.id, { tab: 'chat' })}
             onMarkPaid={() => markVendorPaid(vendor.id)}
           />
         ) : null
@@ -67,7 +67,7 @@ function ChatCards({ cards, onOpenItem }: { cards: AssistantCard[]; onOpenItem?:
             subtitle={[expense.category, formatDate(expense.dueDate), eventName(expense.eventId)].filter(Boolean).join(' · ')}
             totalAmount={expense.totalAmount}
             paidAmount={expense.paidAmount}
-            onOpen={() => onOpenItem?.('payments', expense.id)}
+            onOpen={() => onOpenItem?.('payments', expense.id, { tab: 'chat' })}
             onMarkPaid={() => markExpensePaid(expense.id)}
           />
         ) : null
@@ -80,7 +80,7 @@ function ChatCards({ cards, onOpenItem }: { cards: AssistantCard[]; onOpenItem?:
             todo={todo}
             eventName={eventName(todo.eventId)}
             onToggle={() => toggleTodo(todo.id)}
-            onOpen={() => onOpenItem?.('todos', todo.id)}
+            onOpen={() => onOpenItem?.('todos', todo.id, { tab: 'chat' })}
           />
         ) : null
       }
@@ -89,7 +89,7 @@ function ChatCards({ cards, onOpenItem }: { cards: AssistantCard[]; onOpenItem?:
         <button
           key={key}
           type="button"
-          onClick={() => onOpenItem?.('invites', event.id)}
+          onClick={() => onOpenItem?.('invites', event.id, { tab: 'chat' })}
           className="flex w-full items-center gap-3 rounded-2xl border border-brass-line bg-silk p-3 text-left shadow-soft"
         >
           <span className="flex h-9 w-9 items-center justify-center rounded-full bg-champagne-light text-champagne">
@@ -290,6 +290,8 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             placeholder="Ask Mitra AI…"
+            enterKeyHint="send"
+            autoComplete="off"
             maxLength={2000}
             className="flex-1 rounded-full bg-silk px-4 py-3 text-base"
           />

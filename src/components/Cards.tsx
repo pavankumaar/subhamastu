@@ -18,8 +18,8 @@ export function MarkPaidButton({ onClick, compact = false }: { onClick: () => vo
         stop(event)
         onClick()
       }}
-      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-sage/30 bg-sage-light font-semibold text-sage ${
-        compact ? 'px-2.5 py-1 text-[11px]' : 'px-3 py-1.5 text-xs'
+      className={`inline-flex shrink-0 items-center gap-1 rounded-full border border-sage/30 bg-sage-light font-semibold text-sage active:bg-sage/20 ${
+        compact ? 'min-h-[36px] px-3 text-xs' : 'min-h-[40px] px-3.5 text-sm'
       }`}
     >
       <CheckCircle2 className="h-3.5 w-3.5" />
@@ -92,16 +92,20 @@ interface TodoCardProps {
 export function TodoCard({ todo, eventName, onToggle, onOpen }: TodoCardProps) {
   const isBuy = todo.kind === 'buy'
   return (
-    <article className={`${cardClass} flex items-start gap-3`}>
+    <article className={`${cardClass} flex items-start gap-2`}>
       <button
         type="button"
         onClick={onToggle}
         aria-label={todo.completed ? `Mark ${todo.title} not done` : `Mark ${todo.title} done`}
-        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
-          todo.completed ? 'border-sage bg-sage text-white' : 'border-champagne/60 hover:border-charcoal'
-        }`}
+        className="-my-2 -ml-2 flex h-11 w-11 shrink-0 items-center justify-center rounded-full"
       >
-        {todo.completed ? <Check className="h-3 w-3 stroke-[2.5]" /> : null}
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-full border-2 ${
+            todo.completed ? 'border-sage bg-sage text-white' : 'border-champagne/60'
+          }`}
+        >
+          {todo.completed ? <Check className="h-3.5 w-3.5 stroke-[3]" /> : null}
+        </span>
       </button>
       <button type="button" onClick={onOpen} disabled={!onOpen} className="min-w-0 flex-1 text-left">
         <p className={`text-sm font-medium leading-snug ${todo.completed ? 'text-muted-taupe line-through' : 'text-charcoal'}`}>
@@ -152,7 +156,7 @@ export function PhoneActions({ phone }: { phone: string }) {
       <a
         href={telHref(phone)}
         onClick={stop}
-        className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-sage px-3 py-2 text-xs font-semibold text-white"
+        className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-sage px-3 py-2 text-xs font-semibold text-white"
         aria-label={`Call ${phone}`}
       >
         <Phone className="h-3.5 w-3.5" />
@@ -161,7 +165,7 @@ export function PhoneActions({ phone }: { phone: string }) {
       <button
         type="button"
         onClick={copy}
-        className="inline-flex items-center gap-1 rounded-xl border border-brass-line bg-ivory px-3 py-2 text-xs font-medium text-charcoal"
+        className="inline-flex min-h-10 items-center gap-1 rounded-xl border border-brass-line bg-ivory px-3 py-2 text-xs font-medium text-charcoal"
         aria-label="Copy phone number"
       >
         <Copy className="h-3.5 w-3.5" />

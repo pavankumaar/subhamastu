@@ -19,8 +19,31 @@ export function formatDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? 'No date' : dateFormatter.format(parsed)
 }
 
+// Device-local calendar date (toISOString would give the UTC date, which is yesterday before 5:30 AM in India).
 export function todayString() {
-  return new Date().toISOString().slice(0, 10)
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
+export function daysFromToday(date: string) {
+  const [year, month, day] = date.split('-').map(Number)
+  if (!year || !month || !day) return null
+  const target = new Date(year, month - 1, day).getTime()
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  return Math.round((target - today) / 86400000)
+}
+
+export function relativeDayLabel(date?: string) {
+  if (!date) return ''
+  const days = daysFromToday(date)
+  if (days === null) return ''
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Tomorrow'
+  if (days === -1) return 'Yesterday'
+  return days > 0 ? `In ${days} days` : `${-days} days ago`
 }
 
 // Phone fields accept digits only, with an optional leading "+" for country codes.

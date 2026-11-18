@@ -1,5 +1,6 @@
 import { ArrowLeft, ChevronDown, Plus, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useBackLayer } from '../hooks/useBackLayer'
 
 interface PageHeaderProps {
   title: string
@@ -36,7 +37,7 @@ export function DetailHeader({ backLabel, onBack, title, subtitle, action, title
         <button
           type="button"
           onClick={onBack}
-          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-taupe hover:text-charcoal"
+          className="-ml-1 inline-flex min-h-[40px] items-center gap-1 rounded-lg px-1 text-sm font-semibold text-muted-taupe hover:text-charcoal active:bg-silk"
         >
           <ArrowLeft className="h-4 w-4" />
           {backLabel}
@@ -65,6 +66,7 @@ export interface ActionMenuItem {
 export function ActionMenu({ label, items }: { label: string; items: ActionMenuItem[] }) {
   const [isOpen, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  useBackLayer(isOpen, () => setOpen(false))
 
   useEffect(() => {
     if (!isOpen) return
@@ -152,6 +154,8 @@ interface SheetModalProps {
 
 // Bottom sheet on phones, centered dialog on larger screens. Tapping the backdrop or pressing Escape closes it.
 export function SheetModal({ title, onClose, children }: SheetModalProps) {
+  useBackLayer(true, onClose)
+
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -167,7 +171,7 @@ export function SheetModal({ title, onClose, children }: SheetModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[2147483200] flex items-end justify-center bg-charcoal/40 px-2 pb-2 pt-10 sm:items-center sm:p-4"
+      className="fixed inset-0 z-[2147483200] flex items-end justify-center bg-charcoal/40 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-10 sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose()
       }}
@@ -179,12 +183,12 @@ export function SheetModal({ title, onClose, children }: SheetModalProps) {
         aria-label={title}
         className="animate-modal-in flex max-h-[88dvh] w-full max-w-[480px] flex-col overflow-hidden rounded-3xl border border-brass-line bg-silk shadow-device"
       >
-        <div className="flex items-center justify-between gap-2 border-b border-brass-line/70 px-4 py-3">
+        <div className="flex items-center justify-between gap-2 border-b border-brass-line/70 py-2 pl-4 pr-2">
           <h3 className="text-base font-bold text-charcoal">{title}</h3>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full p-1.5 text-muted-taupe hover:bg-ivory hover:text-charcoal"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-taupe hover:bg-ivory hover:text-charcoal"
             aria-label="Close"
           >
             <X className="h-4 w-4" />

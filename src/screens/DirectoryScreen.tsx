@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { PhoneActions, VendorCard } from '../components/Cards'
 import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
+import { useBackLayer } from '../hooks/useBackLayer'
 import type { VendorItem } from '../types/wedding'
 import { sanitizePhone } from '../utils/weddingFormat'
 
@@ -29,9 +30,10 @@ function formFromVendor(vendor: VendorItem): VendorFormState {
 interface DirectoryScreenProps {
   onQuickActionVisibilityChange?: (visible: boolean) => void
   initialItemId?: string
+  onItemClosed?: () => void
 }
 
-export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId }: DirectoryScreenProps) {
+export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId, onItemClosed }: DirectoryScreenProps) {
   const { data, updateVendorPhone, updateVendor, removeVendor, markVendorPaid } = useWedding()
   const initialVendor = initialItemId ? data.vendors.find((vendor) => vendor.id === initialItemId) : undefined
 
@@ -40,6 +42,7 @@ export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId }
   const [error, setError] = useState('')
   const [phoneDraftFor, setPhoneDraftFor] = useState('')
   const [phoneDraft, setPhoneDraft] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
 
   const eventNameById = useMemo(
     () => new Map(data.guests.events.map((event) => [event.id, event.name])),
@@ -47,6 +50,7 @@ export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId }
   )
   const selectedVendor = data.vendors.find((vendor) => vendor.id === selectedId) ?? null
   const isDetail = Boolean(selectedVendor && form)
+  useBackLayer(isDetail, () => closeVendor())
 
   useEffect(() => {
     if (!onQuickActionVisibilityChange) return
@@ -64,6 +68,8 @@ export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId }
     setSelectedId('')
     setForm(null)
     setError('')
+    setConfirmDelete(false)
+    onItemClosed?.()
   }
 
   function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -107,13 +113,17 @@ export function DirectoryScreen({ onQuickActionVisibilityChange, initialItemId }
             <button
               type="button"
               onClick={() => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true)
+                  return
+                }
                 removeVendor(selectedVendor.id)
                 closeVendor()
               }}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-blush-deep"
+              className="inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2 text-sm font-semibold text-blush-deep active:bg-blush-soft"
             >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
+              <Trash2 className="h-4 w-4" />
+              {confirmDelete ? 'Tap again to delete' : 'Delete'}
             </button>
           }
         />

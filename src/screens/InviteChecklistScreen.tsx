@@ -3,11 +3,14 @@ import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from
 import { PaymentCard, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
 import { ActionMenu, DetailHeader, EmptyStateCard, FieldLabel, PageHeader, SheetModal } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
+import { useBackLayer } from '../hooks/useBackLayer'
 import type { OpenItem } from '../navigation'
 import { EXPENSE_CATEGORIES, type ExpenseCategory, type GuestEventItem, type TodoPriority } from '../types/wedding'
 import {
   compareEventsNearestFirst,
+  daysFromToday,
   formatDate,
+  relativeDayLabel,
   resolvePaidAmount,
   sanitizePhone,
   todayString,
@@ -36,10 +39,12 @@ interface ComposerState {
   invitees: string[]
 }
 
-function emptyComposer(): ComposerState {
+// Items added inside an event are due by the event day unless it has already passed.
+function emptyComposer(eventDate?: string): ComposerState {
+  const today = todayString()
   return {
     title: '',
-    dueDate: todayString(),
+    dueDate: eventDate && eventDate >= today ? eventDate : today,
     priority: 'Medium',
     category: 'Others',
     total: '',
@@ -69,6 +74,8 @@ function EventSummaryCard({
   onSelect: () => void
 }) {
   const confirmed = event.invitees.filter((invitee) => invitee.completed).length
+  const countdown = relativeDayLabel(event.date)
+  const isPast = (daysFromToday(event.date ?? '') ?? 0) < 0
   const stats: Array<[string, string]> = [
     ['Invites', `${confirmed}/${event.invitees.length}`],
     ['To-Dos', String(counts.todos)],
@@ -89,6 +96,15 @@ function EventSummaryCard({
             {event.date ? formatDate(event.date) : 'Date not set'}
           </p>
         </div>
+        {countdown ? (
+          <span
+            className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+              isPast ? 'bg-[#F3EFE8] text-muted-taupe' : 'bg-sage-light text-sage'
+            }`}
+          >
+            {countdown}
+          </span>
+        ) : null}
       </div>
       {event.details ? <p className="line-clamp-2 text-xs text-muted-taupe">{event.details}</p> : null}
       <div className="grid grid-cols-5 gap-1 border-t border-brass-line/70 pt-2 text-center tabular-nums">
@@ -107,12 +123,14 @@ interface InviteChecklistScreenProps {
   onQuickActionVisibilityChange?: (visible: boolean) => void
   initialItemId?: string
   onOpenItem?: OpenItem
+  onItemClosed?: () => void
 }
 
 export function InviteChecklistScreen({
   onQuickActionVisibilityChange,
   initialItemId,
   onOpenItem,
+  onItemClosed,
 }: InviteChecklistScreenProps) {
   const {
     data,
@@ -144,6 +162,8 @@ export function InviteChecklistScreen({
 
   const events = useMemo(() => [...data.guests.events].sort(compareEventsNearestFirst), [data.guests.events])
   const selectedEvent = data.guests.events.find((event) => event.id === selectedEventId) ?? null
+  useBackLayer(Boolean(selectedEvent), () => closeEvent())
+  useBackLayer(notesDraft !== null, () => setNotesDraft(null))
 
   useEffect(() => {
     if (!onQuickActionVisibilityChange) return
@@ -164,10 +184,11 @@ export function InviteChecklistScreen({
     setEditingEvent(false)
     setNotesDraft(null)
     setConfirmRemove(false)
+    onItemClosed?.()
   }
 
   function openComposer(kind: ComposerKind) {
-    setComposer(emptyComposer())
+    setComposer(emptyComposer(selectedEvent?.date))
     setComposerError('')
     setComposerKind(kind)
   }
@@ -303,6 +324,7 @@ export function InviteChecklistScreen({
   const eventTodos = data.todos.filter((todo) => todo.eventId === selectedEvent.id && todo.kind !== 'buy')
   const eventBuyItems = data.todos.filter((todo) => todo.eventId === selectedEvent.id && todo.kind === 'buy')
   const eventPayments = data.expenses.filter((expense) => expense.eventId === selectedEvent.id)
+  const eventOrigin = { tab: 'invites' as const, id: selectedEvent.id }
   const eventVendors = data.vendors.filter((vendor) => vendor.eventId === selectedEvent.id)
   const search = inviteSearch.trim().toLowerCase()
   const visibleInvitees = selectedEvent.invitees
@@ -482,7 +504,7 @@ export function InviteChecklistScreen({
         <SectionTitle title="Items to buy" count={eventBuyItems.length} />
         {eventBuyItems.length === 0 ? <EmptyLine /> : null}
         {eventBuyItems.map((todo) => (
-          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id, eventOrigin)} />
         ))}
       </div>
 
@@ -490,7 +512,7 @@ export function InviteChecklistScreen({
         <SectionTitle title="To-Dos" count={eventTodos.length} />
         {eventTodos.length === 0 ? <EmptyLine /> : null}
         {eventTodos.map((todo) => (
-          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id, eventOrigin)} />
         ))}
       </div>
 
@@ -504,7 +526,7 @@ export function InviteChecklistScreen({
             subtitle={`${expense.category} · ${formatDate(expense.dueDate)}`}
             totalAmount={expense.totalAmount}
             paidAmount={expense.paidAmount}
-            onOpen={() => onOpenItem?.('payments', expense.id)}
+            onOpen={() => onOpenItem?.('payments', expense.id, eventOrigin)}
             onMarkPaid={() => markExpensePaid(expense.id)}
           />
         ))}
@@ -517,7 +539,7 @@ export function InviteChecklistScreen({
           <VendorCard
             key={vendor.id}
             vendor={vendor}
-            onOpen={() => onOpenItem?.('vendors', vendor.id)}
+            onOpen={() => onOpenItem?.('vendors', vendor.id, eventOrigin)}
             onMarkPaid={() => markVendorPaid(vendor.id)}
           />
         ))}
@@ -545,7 +567,7 @@ export function InviteChecklistScreen({
                         <button
                           type="button"
                           onClick={() => setComposer({ ...composer, invitees: composer.invitees.filter((entry) => entry !== name) })}
-                          className="text-muted-taupe"
+                          className="-my-2 -mr-2 flex h-8 w-8 items-center justify-center rounded-full text-muted-taupe active:bg-silk"
                           aria-label={`Remove ${name}`}
                         >
                           <X className="h-3 w-3" />

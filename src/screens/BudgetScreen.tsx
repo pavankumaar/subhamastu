@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type FormEvent } from 'react'
 import { PaymentCard } from '../components/Cards'
 import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
+import { useBackLayer } from '../hooks/useBackLayer'
 import type { OpenItem } from '../navigation'
 import { EXPENSE_CATEGORIES, type ExpenseCategory, type ExpenseItem } from '../types/wedding'
 import { formatCurrencyInr, formatDate, resolvePaidAmount, todayString } from '../utils/weddingFormat'
@@ -50,9 +51,10 @@ interface BudgetScreenProps {
   onQuickActionVisibilityChange?: (visible: boolean) => void
   initialItemId?: string
   onOpenItem?: OpenItem
+  onItemClosed?: () => void
 }
 
-export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onOpenItem }: BudgetScreenProps) {
+export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onOpenItem, onItemClosed }: BudgetScreenProps) {
   const { data, addExpense, updateExpense, removeExpense, markExpensePaid, markVendorPaid } = useWedding()
   const initialExpense = initialItemId ? data.expenses.find((expense) => expense.id === initialItemId) : undefined
 
@@ -61,6 +63,8 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
   const [selectedId, setSelectedId] = useState(initialExpense?.id ?? '')
   const [form, setForm] = useState<PaymentFormState>(() => (initialExpense ? formFromExpense(initialExpense) : emptyForm()))
   const [error, setError] = useState('')
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  useBackLayer(view !== 'list', () => backToList())
 
   const eventNameById = useMemo(
     () => new Map(data.guests.events.map((event) => [event.id, event.name])),
@@ -94,7 +98,18 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
     return [...expenseRows, ...vendorRows]
   }, [data.expenses, data.vendors])
 
-  const filteredRows = filter === 'All' ? rows : rows.filter((row) => row.category === filter)
+  // Unsettled first (soonest due on top), settled payments last.
+  const filteredRows = (filter === 'All' ? rows : rows.filter((row) => row.category === filter))
+    .map((row, index) => ({ row, index }))
+    .sort((left, right) => {
+      const leftSettled = left.row.paidAmount >= left.row.totalAmount
+      const rightSettled = right.row.paidAmount >= right.row.totalAmount
+      if (leftSettled !== rightSettled) return leftSettled ? 1 : -1
+      const leftDue = left.row.dueDate ?? '9999'
+      const rightDue = right.row.dueDate ?? '9999'
+      return leftDue === rightDue ? left.index - right.index : leftDue.localeCompare(rightDue)
+    })
+    .map(({ row }) => row)
   const planned = rows.reduce((sum, row) => sum + row.totalAmount, 0)
   const paid = rows.reduce((sum, row) => sum + Math.min(row.paidAmount, row.totalAmount), 0)
   const outstanding = Math.max(0, planned - paid)
@@ -121,7 +136,9 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
 
   function backToList() {
     setError('')
+    setConfirmDelete(false)
     setView('list')
+    onItemClosed?.()
   }
 
   function readForm() {
@@ -190,13 +207,17 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
               <button
                 type="button"
                 onClick={() => {
+                  if (!confirmDelete) {
+                    setConfirmDelete(true)
+                    return
+                  }
                   removeExpense(selectedExpense.id)
                   backToList()
                 }}
-                className="inline-flex items-center gap-1 text-xs font-semibold text-blush-deep"
+                className="inline-flex min-h-[40px] items-center gap-1 rounded-lg px-2 text-sm font-semibold text-blush-deep active:bg-blush-soft"
               >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                <Trash2 className="h-4 w-4" />
+                {confirmDelete ? 'Tap again to delete' : 'Delete'}
               </button>
             ) : null
           }
@@ -326,7 +347,7 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
             key={category}
             type="button"
             onClick={() => setFilter(category)}
-            className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${
+            className={`min-h-[36px] whitespace-nowrap rounded-full px-3.5 text-xs font-semibold ${
               filter === category ? 'bg-charcoal text-ivory' : 'border border-brass-line bg-silk text-muted-taupe hover:text-charcoal'
             }`}
           >
@@ -338,7 +359,7 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
       {rows.length > 0 ? (
         <div className="flex items-center justify-between px-0.5">
           <span className="text-xs text-muted-taupe">{filteredRows.length} showing</span>
-          <button type="button" onClick={openAdd} className="text-xs font-semibold text-blush-deep">
+          <button type="button" onClick={openAdd} className="-my-2 min-h-[40px] px-1 text-xs font-semibold text-blush-deep">
             + Add payment
           </button>
         </div>
@@ -364,7 +385,7 @@ export function BudgetScreen({ onQuickActionVisibilityChange, initialItemId, onO
                 paidAmount={row.paidAmount}
                 onOpen={() => {
                   if (row.source === 'vendor') {
-                    onOpenItem?.('vendors', row.id)
+                    onOpenItem?.('vendors', row.id, { tab: 'payments' })
                     return
                   }
                   const expense = data.expenses.find((entry) => entry.id === row.id)

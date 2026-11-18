@@ -1,5 +1,6 @@
 import { authFetch } from '../auth/session'
 import type { WeddingPlannerData } from '../types/wedding'
+import { todayString } from '../utils/weddingFormat'
 
 export interface AssistantContext {
   sessionId: string
@@ -244,7 +245,7 @@ async function requestAssistantWithRetry(sessionId: string, query: string) {
       return await authFetch(assistantApiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, sessionId }),
+        body: JSON.stringify({ query, sessionId, clientDate: todayString() }),
       })
     } catch (error) {
       if (attempt >= assistantRetryLimit) {
