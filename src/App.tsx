@@ -1,6 +1,6 @@
-import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, LogOut, NotepadText, Users, X } from 'lucide-react'
-import { useCallback, useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { FieldLabel, SheetModal } from './components/ScreenChrome'
+import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, NotepadText, Users, X } from 'lucide-react'
+import { useCallback, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { FieldLabel, ProfileMenu, SheetModal } from './components/ScreenChrome'
 import { useWedding } from './context/useWedding'
 import { useBackLayer } from './hooks/useBackLayer'
 import type { ItemOrigin, ItemTab } from './navigation'
@@ -82,7 +82,6 @@ function App({ profile, onLogout }: AppProps) {
   const [isQuickActionVisible, setQuickActionVisible] = useState(true)
   const [quickError, setQuickError] = useState('')
   const [form, setForm] = useState<QuickForm>(emptyQuickForm)
-  const [confirmLogout, setConfirmLogout] = useState(false)
 
   const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
 
@@ -111,12 +110,6 @@ function App({ profile, onLogout }: AppProps) {
 
   // Back from any other tab returns to the To-Do home tab before leaving the site.
   useBackLayer(activeTab !== 'todos', () => switchTab('todos'), 0)
-
-  useEffect(() => {
-    if (!confirmLogout) return
-    const timer = window.setTimeout(() => setConfirmLogout(false), 3000)
-    return () => window.clearTimeout(timer)
-  }, [confirmLogout])
 
   function openQuickAction() {
     setForm(emptyQuickForm())
@@ -262,26 +255,8 @@ function App({ profile, onLogout }: AppProps) {
           </span>
           <span className="text-lg font-extrabold leading-none tracking-tight text-charcoal">Subhamastu</span>
           <span className="border-l border-brass-line pl-2 text-[11px] font-medium leading-none text-muted-taupe">Wedding Planner</span>
-          <div className="ml-auto flex items-center gap-1">
-            <span
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-brass-line bg-silk text-sm font-bold text-charcoal"
-              title={`Signed in as ${profile.name}`}
-              aria-label={`Signed in as ${profile.name}`}
-            >
-              {profile.name.charAt(0).toUpperCase()}
-            </span>
-            <button
-              type="button"
-              onClick={() => (confirmLogout ? onLogout() : setConfirmLogout(true))}
-              className={`flex h-10 items-center justify-center gap-1 rounded-full ${
-                confirmLogout ? 'bg-blush-soft px-3 text-xs font-semibold text-blush-deep' : 'w-10 text-muted-taupe hover:bg-silk hover:text-charcoal'
-              }`}
-              aria-label={confirmLogout ? 'Tap again to log out' : 'Log out'}
-              title="Log out"
-            >
-              <LogOut className="h-4 w-4" />
-              {confirmLogout ? 'Log out?' : null}
-            </button>
+          <div className="ml-auto flex items-center">
+            <ProfileMenu name={profile.name} onLogout={onLogout} />
           </div>
         </header>
 

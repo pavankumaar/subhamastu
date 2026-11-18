@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronDown, Plus, X, type LucideIcon } from 'lucide-react'
+import { ArrowLeft, ChevronDown, LogOut, Plus, X, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useBackLayer } from '../hooks/useBackLayer'
 
@@ -62,8 +62,8 @@ export interface ActionMenuItem {
   onSelect: () => void
 }
 
-// Compact trigger button with a right-aligned dropdown; closes on outside tap, Escape, or selection.
-export function ActionMenu({ label, items }: { label: string; items: ActionMenuItem[] }) {
+// Shared open state for dropdowns: closes on outside tap, Escape and the phone Back button.
+function useDropdown() {
   const [isOpen, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   useBackLayer(isOpen, () => setOpen(false))
@@ -84,6 +84,18 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
     }
   }, [isOpen])
 
+  return { isOpen, setOpen, containerRef }
+}
+
+const menuPanelClass =
+  'animate-modal-in absolute right-0 top-full z-[2147483150] mt-2 overflow-hidden rounded-2xl border border-brass-line bg-silk py-1 shadow-device'
+const menuItemClass =
+  'flex min-h-[44px] w-full items-center gap-3 px-4 text-left text-sm font-medium active:bg-champagne-light hover:bg-ivory'
+
+// Compact trigger button with a right-aligned dropdown; closes on outside tap, Escape, or selection.
+export function ActionMenu({ label, items }: { label: string; items: ActionMenuItem[] }) {
+  const { isOpen, setOpen, containerRef } = useDropdown()
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -98,10 +110,7 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
         <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
       </button>
       {isOpen ? (
-        <div
-          role="menu"
-          className="animate-modal-in absolute right-0 top-full z-[2147483150] mt-2 w-56 overflow-hidden rounded-2xl border border-brass-line bg-silk py-1 shadow-device"
-        >
+        <div role="menu" className={`${menuPanelClass} w-56`}>
           {items.map((item) => {
             const Icon = item.icon
             return (
@@ -113,13 +122,56 @@ export function ActionMenu({ label, items }: { label: string; items: ActionMenuI
                   setOpen(false)
                   item.onSelect()
                 }}
-                className="flex min-h-[44px] w-full items-center gap-3 px-4 text-left text-sm font-medium text-charcoal active:bg-champagne-light hover:bg-ivory"
+                className={`${menuItemClass} text-charcoal`}
               >
                 <Icon className="h-4 w-4 shrink-0 text-champagne" />
                 {item.label}
               </button>
             )
           })}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+// Avatar button in the app header; its menu shows who is signed in and holds Log out.
+export function ProfileMenu({ name, onLogout }: { name: string; onLogout: () => void }) {
+  const { isOpen, setOpen, containerRef } = useDropdown()
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label={`Profile menu for ${name}`}
+        title={`Signed in as ${name}`}
+        className={`flex h-10 w-10 items-center justify-center rounded-full border bg-silk text-sm font-bold text-charcoal transition-colors ${
+          isOpen ? 'border-champagne ring-2 ring-champagne/25' : 'border-brass-line'
+        }`}
+      >
+        {name.charAt(0).toUpperCase()}
+      </button>
+      {isOpen ? (
+        <div role="menu" className={`${menuPanelClass} w-52`}>
+          <div className="border-b border-brass-line/70 px-4 py-2.5">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-muted-taupe">Signed in as</p>
+            <p className="truncate text-sm font-bold text-charcoal">{name}</p>
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false)
+              onLogout()
+            }}
+            className={`${menuItemClass} text-blush-deep`}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            Log out
+          </button>
         </div>
       ) : null}
     </div>
