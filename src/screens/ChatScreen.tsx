@@ -207,8 +207,8 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
         ) : null}
 
         {showWelcome ? (
-          <div className="max-w-[88%] rounded-2xl rounded-bl-sm border border-brass-line bg-silk px-4 py-3 text-[15px] leading-relaxed text-charcoal shadow-soft">
-            <span className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-champagne">
+          <div className="max-w-[88%] rounded-2xl rounded-bl-sm border border-brass-line bg-silk px-3.5 py-2.5 text-sm leading-relaxed text-charcoal shadow-soft">
+            <span className="mb-0.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-champagne">
               <Sparkles className="h-3.5 w-3.5" />
               Mitra AI
             </span>
@@ -220,21 +220,21 @@ export function ChatScreen({ onOpenItem }: { onOpenItem?: OpenItem }) {
         {messages.map((message) =>
           message.role === 'user' ? (
             <div key={message.id} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-charcoal px-4 py-3 text-[15px] leading-relaxed text-ivory">
+              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-charcoal px-3.5 py-2.5 text-sm leading-relaxed text-ivory">
                 {message.text}
               </div>
             </div>
           ) : (
             <div key={message.id} className="max-w-[92%]">
               <div
-                className={`whitespace-pre-wrap rounded-2xl rounded-bl-sm px-4 py-3 text-[15px] leading-relaxed ${
+                className={`whitespace-pre-wrap rounded-2xl rounded-bl-sm px-3.5 py-2.5 text-sm leading-relaxed ${
                   message.failed
                     ? 'border border-blush-deep/30 bg-blush-soft text-blush-deep'
                     : 'border border-brass-line bg-silk text-charcoal shadow-soft'
                 }`}
               >
                 {message.failed ? (
-                  <span className="mb-1 flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
+                  <span className="mb-0.5 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
                     <AlertTriangle className="h-3.5 w-3.5" />
                     Mitra couldn&apos;t reply
                   </span>
