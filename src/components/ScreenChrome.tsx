@@ -1,5 +1,5 @@
-import { ArrowLeft, X } from 'lucide-react'
-import { useEffect, type ReactNode } from 'react'
+import { ArrowLeft, ChevronDown, Plus, X, type LucideIcon } from 'lucide-react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 
 interface PageHeaderProps {
   title: string
@@ -26,9 +26,10 @@ interface DetailHeaderProps {
   title: string
   subtitle?: ReactNode
   action?: ReactNode
+  titleAction?: ReactNode
 }
 
-export function DetailHeader({ backLabel, onBack, title, subtitle, action }: DetailHeaderProps) {
+export function DetailHeader({ backLabel, onBack, title, subtitle, action, titleAction }: DetailHeaderProps) {
   return (
     <header className="space-y-1.5 pb-1 pt-1">
       <div className="flex items-center justify-between gap-2">
@@ -42,11 +43,84 @@ export function DetailHeader({ backLabel, onBack, title, subtitle, action }: Det
         </button>
         {action}
       </div>
-      <div className="px-0.5">
-        <h1 className="text-xl font-bold leading-tight tracking-tight text-charcoal">{title}</h1>
-        {subtitle ? <p className="mt-0.5 text-xs text-muted-taupe">{subtitle}</p> : null}
+      <div className="flex items-start justify-between gap-3 px-0.5">
+        <div className="min-w-0">
+          <h1 className="break-words text-xl font-bold leading-tight tracking-tight text-charcoal">{title}</h1>
+          {subtitle ? <p className="mt-0.5 text-xs text-muted-taupe">{subtitle}</p> : null}
+        </div>
+        {titleAction ? <div className="shrink-0">{titleAction}</div> : null}
       </div>
     </header>
+  )
+}
+
+export interface ActionMenuItem {
+  key: string
+  label: string
+  icon: LucideIcon
+  onSelect: () => void
+}
+
+// Compact trigger button with a right-aligned dropdown; closes on outside tap, Escape, or selection.
+export function ActionMenu({ label, items }: { label: string; items: ActionMenuItem[] }) {
+  const [isOpen, setOpen] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handlePointer = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false)
+    }
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', handlePointer)
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      document.removeEventListener('pointerdown', handlePointer)
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [isOpen])
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((open) => !open)}
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        className="inline-flex min-h-[40px] items-center gap-1 rounded-full bg-sindoor pl-3 pr-2.5 text-sm font-semibold text-white shadow-float"
+      >
+        <Plus className="h-4 w-4" />
+        {label}
+        <ChevronDown className={`h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen ? (
+        <div
+          role="menu"
+          className="animate-modal-in absolute right-0 top-full z-[2147483150] mt-2 w-56 overflow-hidden rounded-2xl border border-brass-line bg-silk py-1 shadow-device"
+        >
+          {items.map((item) => {
+            const Icon = item.icon
+            return (
+              <button
+                key={item.key}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false)
+                  item.onSelect()
+                }}
+                className="flex min-h-[44px] w-full items-center gap-3 px-4 text-left text-sm font-medium text-charcoal active:bg-champagne-light hover:bg-ivory"
+              >
+                <Icon className="h-4 w-4 shrink-0 text-champagne" />
+                {item.label}
+              </button>
+            )
+          })}
+        </div>
+      ) : null}
+    </div>
   )
 }
 

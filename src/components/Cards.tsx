@@ -1,4 +1,4 @@
-import { Check, CheckCircle2, ChevronRight, Copy, Phone, Plus, ShoppingBag } from 'lucide-react'
+import { Check, CheckCircle2, ChevronRight, Copy, Phone, ShoppingBag } from 'lucide-react'
 import { useState, type MouseEvent, type ReactNode } from 'react'
 import type { TodoItem, TodoPriority, VendorItem } from '../types/wedding'
 import { formatCurrencyInr, formatDate, telHref } from '../utils/weddingFormat'
@@ -223,19 +223,5 @@ export function SectionTitle({ title, count, action }: { title: string; count?: 
       </h3>
       {action}
     </div>
-  )
-}
-
-// Full-width, thumb-friendly "add" action placed at the top of a section.
-export function SectionAddButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex min-h-[44px] w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-champagne/50 bg-silk/60 px-3 text-sm font-semibold text-charcoal active:bg-champagne-light"
-    >
-      <Plus className="h-4 w-4 text-champagne" />
-      {label}
-    </button>
   )
 }

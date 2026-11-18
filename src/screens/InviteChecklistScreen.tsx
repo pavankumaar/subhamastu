@@ -1,7 +1,7 @@
-import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { Check, Landmark, ListChecks, Pencil, Search, ShoppingBag, StickyNote, Store, Trash2, UserPlus, X } from 'lucide-react'
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { PaymentCard, SectionAddButton, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
-import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader, SheetModal } from '../components/ScreenChrome'
+import { PaymentCard, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
+import { ActionMenu, DetailHeader, EmptyStateCard, FieldLabel, PageHeader, SheetModal } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
 import type { OpenItem } from '../navigation'
 import { EXPENSE_CATEGORIES, type ExpenseCategory, type GuestEventItem, type TodoPriority } from '../types/wedding'
@@ -53,6 +53,10 @@ function emptyComposer(): ComposerState {
 
 function normalizeName(value: string) {
   return value.trim().replace(/\s+/g, ' ')
+}
+
+function EmptyLine() {
+  return <p className="px-0.5 text-xs text-muted-taupe">Nothing yet — use “Add” at the top.</p>
 }
 
 function EventSummaryCard({
@@ -136,7 +140,6 @@ export function InviteChecklistScreen({
   const [eventFormError, setEventFormError] = useState('')
   const [notesDraft, setNotesDraft] = useState<string | null>(null)
   const [inviteSearch, setInviteSearch] = useState('')
-  const [buyDraft, setBuyDraft] = useState('')
   const [confirmRemove, setConfirmRemove] = useState(false)
 
   const events = useMemo(() => [...data.guests.events].sort(compareEventsNearestFirst), [data.guests.events])
@@ -319,6 +322,24 @@ export function InviteChecklistScreen({
         onBack={closeEvent}
         title={selectedEvent.name}
         subtitle={subtitle}
+        titleAction={
+          <ActionMenu
+            label="Add"
+            items={[
+              { key: 'invite', label: 'Invitees', icon: UserPlus, onSelect: () => openComposer('invite') },
+              { key: 'todo', label: 'To-do', icon: ListChecks, onSelect: () => openComposer('todo') },
+              { key: 'buy', label: 'Item to buy', icon: ShoppingBag, onSelect: () => openComposer('buy') },
+              { key: 'payment', label: 'Payment', icon: Landmark, onSelect: () => openComposer('payment') },
+              { key: 'vendor', label: 'Vendor', icon: Store, onSelect: () => openComposer('vendor') },
+              {
+                key: 'notes',
+                label: selectedEvent.notes ? 'Edit notes' : 'Notes',
+                icon: StickyNote,
+                onSelect: () => setNotesDraft(selectedEvent.notes ?? ''),
+              },
+            ]}
+          />
+        }
         action={
           <div className="-mr-2 flex items-center">
             <button
@@ -358,20 +379,7 @@ export function InviteChecklistScreen({
 
       <div className="divide-y divide-brass-line">
       <div className="space-y-2.5 pb-4 pt-1">
-        <SectionTitle
-          title="Notes"
-          action={
-            notesDraft === null && selectedEvent.notes ? (
-              <button
-                type="button"
-                onClick={() => setNotesDraft(selectedEvent.notes ?? '')}
-                className="-my-1 rounded-lg px-2 py-1.5 text-xs font-semibold text-blush-deep"
-              >
-                Edit notes
-              </button>
-            ) : null
-          }
-        />
+        <SectionTitle title="Notes" />
         {notesDraft !== null ? (
           <div className="space-y-2 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
             <textarea
@@ -404,17 +412,22 @@ export function InviteChecklistScreen({
             </div>
           </div>
         ) : selectedEvent.notes ? (
-          <p className="whitespace-pre-wrap rounded-2xl border border-brass-line bg-silk p-3 text-sm leading-relaxed text-charcoal shadow-soft">
+          <button
+            type="button"
+            onClick={() => setNotesDraft(selectedEvent.notes ?? '')}
+            className="w-full whitespace-pre-wrap rounded-2xl border border-brass-line bg-silk p-3 text-left text-sm leading-relaxed text-charcoal shadow-soft"
+            aria-label="Edit notes"
+          >
             {selectedEvent.notes}
-          </p>
+          </button>
         ) : (
-          <SectionAddButton label="Add notes" onClick={() => setNotesDraft('')} />
+          <EmptyLine />
         )}
       </div>
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Invitees" count={selectedEvent.invitees.length} action={<span className="text-xs text-muted-taupe">{confirmedCount} confirmed</span>} />
-        <SectionAddButton label="Add invitees" onClick={() => openComposer('invite')} />
+        {selectedEvent.invitees.length === 0 ? <EmptyLine /> : null}
         {selectedEvent.invitees.length > 0 ? (
         <div className="space-y-1 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
             <div className="relative">
@@ -467,30 +480,7 @@ export function InviteChecklistScreen({
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Items to buy" count={eventBuyItems.length} />
-        <form
-          onSubmit={(formEvent) => {
-            formEvent.preventDefault()
-            if (!buyDraft.trim()) return
-            addTodo({ title: buyDraft, dueDate: todayString(), priority: 'Medium', kind: 'buy' }, selectedEvent.id)
-            setBuyDraft('')
-          }}
-          className="flex items-center gap-2"
-        >
-          <input
-            value={buyDraft}
-            onChange={(event) => setBuyDraft(event.target.value)}
-            placeholder="Add item, e.g. Talambralu pearls"
-            enterKeyHint="done"
-            className="min-h-[44px] flex-1 text-sm"
-          />
-          <button
-            type="submit"
-            aria-label="Add item to buy"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-charcoal text-ivory"
-          >
-            <Plus className="h-5 w-5" />
-          </button>
-        </form>
+        {eventBuyItems.length === 0 ? <EmptyLine /> : null}
         {eventBuyItems.map((todo) => (
           <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
         ))}
@@ -498,7 +488,7 @@ export function InviteChecklistScreen({
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="To-Dos" count={eventTodos.length} />
-        <SectionAddButton label="Add to-do" onClick={() => openComposer('todo')} />
+        {eventTodos.length === 0 ? <EmptyLine /> : null}
         {eventTodos.map((todo) => (
           <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
         ))}
@@ -506,7 +496,7 @@ export function InviteChecklistScreen({
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Payments" count={eventPayments.length} />
-        <SectionAddButton label="Add payment" onClick={() => openComposer('payment')} />
+        {eventPayments.length === 0 ? <EmptyLine /> : null}
         {eventPayments.map((expense) => (
           <PaymentCard
             key={expense.id}
@@ -522,7 +512,7 @@ export function InviteChecklistScreen({
 
       <div className="space-y-2.5 pt-4">
         <SectionTitle title="Vendors" count={eventVendors.length} />
-        <SectionAddButton label="Add vendor" onClick={() => openComposer('vendor')} />
+        {eventVendors.length === 0 ? <EmptyLine /> : null}
         {eventVendors.map((vendor) => (
           <VendorCard
             key={vendor.id}
