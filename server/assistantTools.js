@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 // Every tool the agent can call. `params` documents the payload for the model;
 // `run` mutates the draft planner state and returns a short summary or throws a ToolError.
 
-const EXPENSE_CATEGORIES = ['Venue', 'Catering', 'Attire', 'Photography', 'Decor']
+const EXPENSE_CATEGORIES = ['Venue', 'Catering', 'Attire', 'Photography', 'Decor', 'Others']
 
 class ToolError extends Error {}
 
@@ -58,7 +58,17 @@ function category(value, title = '') {
   if (/(food|cater|lunch|dinner|breakfast|bhojanam|sweets|meal)/.test(hint)) return 'Catering'
   if (/(saree|sari|attire|dress|jewel|sherwani|pattu|blouse|outfit|makeup)/.test(hint)) return 'Attire'
   if (/(photo|video|camera|album|drone)/.test(hint)) return 'Photography'
-  return 'Decor'
+  if (/(decor|flower|garland|mandap decor|lighting|stage|rangoli)/.test(hint)) return 'Decor'
+  return 'Others'
+}
+
+function todoKind(value) {
+  return text(value).toLowerCase() === 'buy' ? 'buy' : 'task'
+}
+
+function applyTodoKind(todo, value) {
+  if (todoKind(value) === 'buy') todo.kind = 'buy'
+  else delete todo.kind
 }
 
 function expenseStatus(totalAmount, paidAmount) {
@@ -169,15 +179,22 @@ const tools = {
 
   // ---------- Events / ceremonies ----------
   addEvent: {
-    params: '{"name","date"?:"YYYY-MM-DD","details"?,"invitees"?:["name"],"copyInviteesFrom"?:["event id or name"]}',
-    description: 'Create a ceremony/event (Sangeet, Haldi, Muhurtham...) optionally with invitees.',
+    params: '{"name","date"?:"YYYY-MM-DD","details"?,"notes"?,"invitees"?:["name"],"copyInviteesFrom"?:["event id or name"]}',
+    description: 'Create a ceremony/event (Sangeet, Haldi, Muhurtham...) optionally with invitees and notes.',
     run(state, payload) {
       const name = text(payload.name)
       if (!name) throw new ToolError('Event name is required.')
       if (events(state).some((event) => event.name.toLowerCase() === name.toLowerCase())) {
         throw new ToolError(`An event named "${name}" already exists.`)
       }
-      const event = { id: id('event'), name, date: isoDate(payload.date), details: text(payload.details), invitees: [] }
+      const event = {
+        id: id('event'),
+        name,
+        date: isoDate(payload.date),
+        details: text(payload.details),
+        notes: typeof payload.notes === 'string' ? payload.notes.trim() : '',
+        invitees: [],
+      }
       const copied = (Array.isArray(payload.copyInviteesFrom) ? payload.copyInviteesFrom : [])
         .flatMap((ref) => findByRef(events(state), ref, 'name', 'event').invitees.map((invitee) => invitee.name))
       const added = addUniqueInvitees(event, [...namesList(payload.invitees), ...copied])
@@ -187,13 +204,14 @@ const tools = {
     },
   },
   updateEvent: {
-    params: '{"event":"id or name","name"?,"date"?:"YYYY-MM-DD","details"?}',
-    description: 'Rename an event or change its date/details.',
+    params: '{"event":"id or name","name"?,"date"?:"YYYY-MM-DD","details"?,"notes"?}',
+    description: 'Edit an event: rename, change date, details, or notes (notes replaces the existing notes).',
     run(state, payload) {
       const event = findByRef(events(state), payload.event ?? payload.eventId, 'name', 'event')
       if (hasValue(payload, 'name') && text(payload.name)) event.name = text(payload.name)
       if (hasValue(payload, 'date')) event.date = isoDate(payload.date)
       if (hasValue(payload, 'details')) event.details = text(payload.details)
+      if (typeof payload.notes === 'string') event.notes = payload.notes.trim()
       return `Updated event "${event.name}"`
     },
   },
@@ -246,8 +264,8 @@ const tools = {
 
   // ---------- Tasks ----------
   addTodo: {
-    params: '{"title","dueDate"?:"YYYY-MM-DD","priority"?:"High|Medium|Low","event"?:"id or name"}',
-    description: 'Add a checklist task / reminder / follow-up.',
+    params: '{"title","kind"?:"task|buy","dueDate"?:"YYYY-MM-DD","priority"?:"High|Medium|Low","event"?:"id or name"}',
+    description: 'Add a checklist task / reminder / follow-up. Use kind "buy" for shopping items (things to buy).',
     run(state, payload) {
       const title = safeTodoTitle(text(payload.title))
       if (!title) throw new ToolError('Task title is required.')
@@ -259,17 +277,19 @@ const tools = {
         completed: false,
         priority: priority(payload.priority),
       }
+      applyTodoKind(todo, payload.kind)
       applyEventLink(todo, state, payload, hasValue(payload, 'event') ? 'event' : 'eventId')
       state.todos.unshift(todo)
-      return `Added task "${title}" (${todo.priority}, due ${todo.dueDate})`
+      return `Added ${todo.kind === 'buy' ? 'item to buy' : 'task'} "${title}" (${todo.priority}, due ${todo.dueDate})`
     },
   },
   updateTodo: {
-    params: '{"todo":"id or title","title"?,"dueDate"?:"YYYY-MM-DD","priority"?:"High|Medium|Low","completed"?:boolean,"event"?:"id or name or \\"\\" to unlink"}',
-    description: 'Edit a task: rename, reschedule, change priority, mark done/undone, link/unlink event.',
+    params: '{"todo":"id or title","title"?,"kind"?:"task|buy","dueDate"?:"YYYY-MM-DD","priority"?:"High|Medium|Low","completed"?:boolean,"event"?:"id or name or \\"\\" to unlink"}',
+    description: 'Edit a task or item to buy: rename, reschedule, change priority/kind, mark done/bought, link/unlink event.',
     run(state, payload) {
       const todo = findByRef(state.todos, payload.todo ?? payload.todoId ?? payload.todoTitle, 'title', 'task')
       if (hasValue(payload, 'title') && text(payload.title)) todo.title = safeTodoTitle(text(payload.title))
+      if (hasValue(payload, 'kind')) applyTodoKind(todo, payload.kind)
       if (hasValue(payload, 'dueDate')) todo.dueDate = isoDate(payload.dueDate)
       if (hasValue(payload, 'priority')) todo.priority = priority(payload.priority)
       if (typeof payload.completed === 'boolean') todo.completed = payload.completed
@@ -289,14 +309,14 @@ const tools = {
 
   // ---------- Payments ----------
   addExpense: {
-    params: '{"title","totalAmount":number,"paidAmount"?:number,"category"?:"Venue|Catering|Attire|Photography|Decor","dueDate"?:"YYYY-MM-DD","event"?:"id or name"}',
-    description: 'Add a payment / expense / advance to track.',
+    params: '{"title","totalAmount":number,"paidAmount"?:number,"category"?:"Venue|Catering|Attire|Photography|Decor|Others","dueDate"?:"YYYY-MM-DD","event"?:"id or name"}',
+    description: 'Add a payment / expense. If paidAmount is omitted the payment is recorded as FULLY PAID; pass paidAmount 0 for an unpaid due/reminder, or the advance amount for a partial payment.',
     run(state, payload) {
       const title = text(payload.title)
       if (!title) throw new ToolError('Payment title is required.')
       const totalAmount = money(payload.totalAmount, 'totalAmount')
       if (totalAmount <= 0) throw new ToolError('Payment total must be greater than 0.')
-      const paidAmount = Math.min(totalAmount, money(payload.paidAmount ?? 0, 'paidAmount'))
+      const paidAmount = Math.min(totalAmount, money(payload.paidAmount ?? totalAmount, 'paidAmount'))
       const expense = {
         id: id('expense'),
         title,
@@ -480,6 +500,37 @@ export function applyAssistantActions(actions, currentState) {
   return { state, appliedActions: applied, failedActions: failed }
 }
 
+const CARD_SOURCES = {
+  vendor: { list: (state) => state?.vendors ?? [], nameKey: 'name' },
+  payment: { list: (state) => state?.expenses ?? [], nameKey: 'title' },
+  task: { list: (state) => state?.todos ?? [], nameKey: 'title' },
+  event: { list: (state) => state?.guests?.events ?? [], nameKey: 'name' },
+}
+
+// Resolves the model's requested cards ({type, ref}) against the final planner state, so the
+// client only ever receives ids that exist. Unknown or ambiguous references are dropped silently.
+export function resolveCards(cards, state) {
+  if (!Array.isArray(cards)) return []
+  const seen = new Set()
+  const resolved = []
+  for (const card of cards.slice(0, 8)) {
+    const type = text(card?.type).toLowerCase()
+    const source = CARD_SOURCES[type]
+    if (!source) continue
+    try {
+      const item = findByRef(source.list(state), card.ref ?? card.id ?? card.name ?? card.title, source.nameKey, type)
+      const key = `${type}:${item.id}`
+      if (!seen.has(key)) {
+        seen.add(key)
+        resolved.push({ type, id: item.id })
+      }
+    } catch (error) {
+      if (!(error instanceof ToolError)) throw error
+    }
+  }
+  return resolved
+}
+
 // Compact view of planner data for the model: fewer tokens, ids included for precise references.
 export function buildPlannerSnapshot(state) {
   const eventName = new Map((state?.guests?.events ?? []).map((event) => [event.id, event.name]))
@@ -491,11 +542,13 @@ export function buildPlannerSnapshot(state) {
       name: event.name,
       date: event.date,
       details: event.details || undefined,
+      notes: event.notes || undefined,
       invitees: event.invitees.map((invitee) => ({ id: invitee.id, name: invitee.name, confirmed: invitee.completed })),
     })),
     tasks: (state?.todos ?? []).map((todo) => ({
       id: todo.id,
       title: todo.title,
+      kind: todo.kind === 'buy' ? 'buy' : undefined,
       dueDate: todo.dueDate,
       priority: todo.priority,
       done: Boolean(todo.completed),

@@ -1,119 +1,71 @@
-import {
-  AlertTriangle,
-  CalendarCheck2,
-  CirclePlus,
-  Landmark,
-  LogOut,
-  NotepadText,
-  ReceiptText,
-  UserRound,
-  Users,
-  X,
-} from 'lucide-react'
-import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { StyledDropdown } from './components/StyledDropdown'
+import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, LogOut, NotepadText, Users, X } from 'lucide-react'
+import { useCallback, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { FieldLabel, SheetModal } from './components/ScreenChrome'
 import { useWedding } from './context/useWedding'
+import type { ItemTab } from './navigation'
 import { BudgetScreen } from './screens/BudgetScreen'
 import { ChatScreen } from './screens/ChatScreen'
 import { DirectoryScreen } from './screens/DirectoryScreen'
 import { InviteChecklistScreen } from './screens/InviteChecklistScreen'
 import { TodoTimelineScreen } from './screens/TodoTimelineScreen'
-import type { ExpenseCategory, TodoPriority } from './types/wedding'
+import { EXPENSE_CATEGORIES, type ExpenseCategory, type TodoKind, type TodoPriority } from './types/wedding'
+import { resolvePaidAmount, sanitizePhone, todayString } from './utils/weddingFormat'
 
-type AppTab = 'todos' | 'payments' | 'chat' | 'invites' | 'vendors'
+export type AppTab = 'todos' | 'payments' | 'chat' | 'invites' | 'vendors'
 
-const tabs: Array<{
-  key: AppTab
-  label: string
-  addLabel: string
-  icon: typeof CalendarCheck2
-}> = [
+const tabs: Array<{ key: ItemTab; label: string; addLabel: string; icon: typeof CalendarCheck2 }> = [
   { key: 'todos', label: 'To-Do', addLabel: 'Task', icon: CalendarCheck2 },
   { key: 'payments', label: 'Payments', addLabel: 'Payment', icon: Landmark },
   { key: 'invites', label: 'Events', addLabel: 'Event', icon: Users },
   { key: 'vendors', label: 'Vendors', addLabel: 'Vendor', icon: NotepadText },
 ]
 
-const expenseCategories: ExpenseCategory[] = ['Venue', 'Catering', 'Attire', 'Photography', 'Decor']
-const expenseCategoryOptions = expenseCategories.map((category) => ({
-  value: category,
-  label: category,
-}))
-
-function getCurrentDateString() {
-  return new Date().toISOString().slice(0, 10)
-}
-
-interface TaskFormState {
+interface QuickForm {
   title: string
   dueDate: string
   priority: TodoPriority
+  kind: TodoKind
   eventId: string
-}
-
-interface InviteFormState {
-  eventName: string
-  eventDate: string
-  eventDetails: string
+  category: ExpenseCategory
+  total: string
+  paid: string
+  phone: string
+  notes: string
   memberInput: string
   members: string[]
-  quickAddEventIds: string[]
+  copyFromEventIds: string[]
 }
 
-interface ExpenseFormState {
-  title: string
-  category: ExpenseCategory
-  totalAmount: string
-  paidAmount: string
-  dueDate: string
-}
-
-interface VendorFormState {
-  name: string
-  phone: string
-  totalContract: string
-  paidAmount: string
-  notes: string
-}
-
-function createEmptyTaskForm(): TaskFormState {
+function emptyQuickForm(): QuickForm {
   return {
     title: '',
-    dueDate: getCurrentDateString(),
+    dueDate: todayString(),
     priority: 'Medium',
+    kind: 'task',
     eventId: '',
-  }
-}
-
-function createEmptyInviteForm(): InviteFormState {
-  return {
-    eventName: '',
-    eventDate: getCurrentDateString(),
-    eventDetails: '',
+    category: 'Others',
+    total: '',
+    paid: '',
+    phone: '',
+    notes: '',
     memberInput: '',
     members: [],
-    quickAddEventIds: [],
+    copyFromEventIds: [],
   }
 }
 
-function createEmptyExpenseForm(): ExpenseFormState {
-  return {
-    title: '',
-    category: 'Venue',
-    totalAmount: '',
-    paidAmount: '',
-    dueDate: getCurrentDateString(),
-  }
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
 }
 
-function createEmptyVendorForm(): VendorFormState {
-  return {
-    name: '',
-    phone: '',
-    totalContract: '',
-    paidAmount: '',
-    notes: '',
-  }
+function DiyaIcon({ className }: { className: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+      <path d="M12 3C12 3 9.5 6.2 9.5 8.2C9.5 9.6 10.6 10.7 12 10.7C13.4 10.7 14.5 9.6 14.5 8.2C14.5 6.2 12 3 12 3Z" />
+      <path d="M4 14C4 17.5 7.6 20 12 20C16.4 20 20 17.5 20 14H4Z" />
+      <path d="M8 20H16" />
+    </svg>
+  )
 }
 
 interface AppProps {
@@ -124,292 +76,167 @@ interface AppProps {
 function App({ profile, onLogout }: AppProps) {
   const { data, addExpense, addTodo, addGuestEvent, addVendor, syncError } = useWedding()
   const [activeTab, setActiveTab] = useState<AppTab>('todos')
+  const [focus, setFocus] = useState<{ tab: ItemTab; id: string; nonce: number } | null>(null)
   const [isQuickActionOpen, setQuickActionOpen] = useState(false)
   const [isQuickActionVisible, setQuickActionVisible] = useState(true)
-  const [quickActionError, setQuickActionError] = useState('')
+  const [quickError, setQuickError] = useState('')
+  const [form, setForm] = useState<QuickForm>(emptyQuickForm)
 
-  const [taskForm, setTaskForm] = useState<TaskFormState>(createEmptyTaskForm())
-  const [inviteForm, setInviteForm] = useState<InviteFormState>(createEmptyInviteForm())
-  const [expenseForm, setExpenseForm] = useState<ExpenseFormState>(createEmptyExpenseForm())
-  const [vendorForm, setVendorForm] = useState<VendorFormState>(createEmptyVendorForm())
+  const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
 
-  const activeTabConfig = useMemo(() => tabs.find((tab) => tab.key === activeTab), [activeTab])
+  const openItem = useCallback((tab: ItemTab, id: string) => {
+    setFocus((current) => ({ tab, id, nonce: (current?.nonce ?? 0) + 1 }))
+    setActiveTab(tab)
+  }, [])
 
-  useEffect(() => {
-    if (!isQuickActionOpen) {
-      return
-    }
+  function switchTab(tab: AppTab) {
+    setFocus(null)
+    setActiveTab(tab)
+    setQuickActionVisible(tab !== 'chat')
+  }
 
-    const previousBodyOverflow = document.body.style.overflow
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-
-    return () => {
-      document.body.style.overflow = previousBodyOverflow
-      document.documentElement.style.overflow = previousHtmlOverflow
-    }
-  }, [isQuickActionOpen])
-
-  function openQuickActionModal() {
-    setQuickActionError('')
-    if (activeTab === 'todos') {
-      setTaskForm(createEmptyTaskForm())
-    } else if (activeTab === 'payments') {
-      setExpenseForm(createEmptyExpenseForm())
-    } else if (activeTab === 'invites') {
-      setInviteForm(createEmptyInviteForm())
-    } else if (activeTab === 'vendors') {
-      setVendorForm(createEmptyVendorForm())
-    }
+  function openQuickAction() {
+    setForm(emptyQuickForm())
+    setQuickError('')
     setQuickActionOpen(true)
   }
 
-  function closeQuickActionModal() {
+  const closeQuickAction = useCallback(() => {
     setQuickActionOpen(false)
-    setQuickActionError('')
+    setQuickError('')
+  }, [])
+
+  function addMemberChip(raw: string) {
+    const name = normalizeName(raw)
+    if (!name) return
+    setForm((current) =>
+      current.members.some((entry) => entry.toLowerCase() === name.toLowerCase())
+        ? { ...current, memberInput: '' }
+        : { ...current, memberInput: '', members: [...current.members, name] },
+    )
   }
 
-  function normalizeInviteeName(rawName: string) {
-    return rawName.trim().replace(/\s+/g, ' ')
-  }
-
-  function addInviteeChip(rawName: string) {
-    const normalized = normalizeInviteeName(rawName)
-    if (!normalized) {
-      return
-    }
-
-    setInviteForm((current) => {
-      const alreadyExists = current.members.some(
-        (name) => name.toLowerCase() === normalized.toLowerCase(),
-      )
-      if (alreadyExists) {
-        return { ...current, memberInput: '' }
-      }
-      return {
-        ...current,
-        memberInput: '',
-        members: [...current.members, normalized],
-      }
-    })
-  }
-
-  function removeInviteeChip(nameToRemove: string) {
-    setInviteForm((current) => ({
-      ...current,
-      members: current.members.filter((name) => name !== nameToRemove),
-    }))
-  }
-
-  function toggleQuickAddEventSelection(eventId: string) {
-    setInviteForm((current) => {
-      const alreadySelected = current.quickAddEventIds.includes(eventId)
-      return {
-        ...current,
-        quickAddEventIds: alreadySelected
-          ? current.quickAddEventIds.filter((id) => id !== eventId)
-          : [...current.quickAddEventIds, eventId],
-      }
-    })
-  }
-
-  function handleInviteMemberInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') {
-      return
-    }
+  function handleMemberKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
     event.preventDefault()
-    addInviteeChip(inviteForm.memberInput)
+    addMemberChip(form.memberInput)
   }
 
-  function handleQuickActionSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleQuickSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setQuickActionError('')
+    setQuickError('')
+    const title = form.title.trim()
 
     if (activeTab === 'todos') {
-      if (!taskForm.title.trim()) {
-        setQuickActionError('Please add a task title first.')
-        return
-      }
-      if (!taskForm.dueDate) {
-        setQuickActionError('Please select a due date.')
-        return
-      }
-
-      addTodo(
-        {
-          title: taskForm.title,
-          dueDate: taskForm.dueDate,
-          priority: taskForm.priority,
-        },
-        taskForm.eventId || undefined,
+      if (!title) return setQuickError(form.kind === 'buy' ? 'What do you need to buy?' : 'Please add a task title.')
+      if (!form.dueDate) return setQuickError('Please choose a due date.')
+      addTodo({ title, dueDate: form.dueDate, priority: form.priority, kind: form.kind }, form.eventId || undefined)
+    } else if (activeTab === 'payments') {
+      const total = Number(form.total)
+      const paid = resolvePaidAmount(form.paid, total)
+      if (!title) return setQuickError('Please add a payment title.')
+      if (!Number.isFinite(total) || total <= 0) return setQuickError('Total must be greater than ₹0.')
+      if (!Number.isFinite(paid) || paid < 0 || paid > total) return setQuickError('Paid amount must be between ₹0 and the total.')
+      if (!form.dueDate) return setQuickError('Please choose a due date.')
+      addExpense(
+        { title, vendorName: '', category: form.category, totalAmount: total, paidAmount: paid, dueDate: form.dueDate },
+        form.eventId || undefined,
       )
-      closeQuickActionModal()
-      return
-    }
-
-    if (activeTab === 'payments') {
-      const totalAmount = Number(expenseForm.totalAmount)
-      const paidAmount = Number(expenseForm.paidAmount || 0)
-
-      if (!expenseForm.title.trim()) {
-        setQuickActionError('Please add payment title.')
-        return
-      }
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
-        setQuickActionError('Total amount should be greater than 0.')
-        return
-      }
-      if (!Number.isFinite(paidAmount) || paidAmount < 0) {
-        setQuickActionError('Paid amount cannot be negative.')
-        return
-      }
-      if (paidAmount > totalAmount) {
-        setQuickActionError('Paid amount cannot exceed total amount.')
-        return
-      }
-      if (!expenseForm.dueDate) {
-        setQuickActionError('Please choose a due date.')
-        return
-      }
-
-      addExpense({
-        title: expenseForm.title,
-        vendorName: '',
-        category: expenseForm.category,
-        totalAmount,
-        paidAmount,
-        dueDate: expenseForm.dueDate,
-      })
-      closeQuickActionModal()
-      return
-    }
-
-    if (activeTab === 'invites') {
-      const pendingName = normalizeInviteeName(inviteForm.memberInput)
-      const members = pendingName
-        ? inviteForm.members.concat(pendingName)
-        : inviteForm.members
-      const hasQuickAddMembers = inviteForm.quickAddEventIds.some((eventId) =>
-        data.guests.events.some((event) => event.id === eventId && event.invitees.length > 0),
-      )
-
-      if (!inviteForm.eventName.trim()) {
-        setQuickActionError('Please add an event name first.')
-        return
-      }
-      if (!inviteForm.eventDate) {
-        setQuickActionError('Please select an event date.')
-        return
-      }
-      if (members.length === 0 && !hasQuickAddMembers) {
-        addGuestEvent({
-          name: inviteForm.eventName,
-          date: inviteForm.eventDate,
-          details: inviteForm.eventDetails,
-          members: [],
-          quickAddEventIds: [],
-        })
-        closeQuickActionModal()
-        return
-      }
-
+    } else if (activeTab === 'invites') {
+      if (!title) return setQuickError('Please add an event name.')
+      const pending = normalizeName(form.memberInput)
       addGuestEvent({
-        name: inviteForm.eventName,
-        date: inviteForm.eventDate,
-        details: inviteForm.eventDetails,
-        members,
-        quickAddEventIds: inviteForm.quickAddEventIds,
+        name: title,
+        date: form.dueDate,
+        details: form.notes,
+        members: pending ? [...form.members, pending] : form.members,
+        quickAddEventIds: form.copyFromEventIds,
       })
-      closeQuickActionModal()
-      return
+    } else if (activeTab === 'vendors') {
+      const contract = Number(form.total || 0)
+      const paid = Number(form.paid || 0)
+      if (!title) return setQuickError('Please add the vendor name.')
+      if (!Number.isFinite(contract) || contract < 0 || !Number.isFinite(paid) || paid < 0) return setQuickError('Amounts cannot be negative.')
+      if (paid > contract) return setQuickError('Paid amount cannot exceed the contract amount.')
+      addVendor(
+        { name: title, role: '', phone: form.phone, email: '', totalContract: contract, paidAmount: paid, notes: form.notes },
+        form.eventId || undefined,
+      )
     }
-
-    if (activeTab === 'vendors') {
-      const totalContract = Number(vendorForm.totalContract || 0)
-      const paidAmount = Number(vendorForm.paidAmount || 0)
-
-      if (!vendorForm.name.trim()) {
-        setQuickActionError('Please add vendor name.')
-        return
-      }
-      if (!Number.isFinite(totalContract) || totalContract < 0) {
-        setQuickActionError('Contract amount cannot be negative.')
-        return
-      }
-      if (!Number.isFinite(paidAmount) || paidAmount < 0) {
-        setQuickActionError('Paid amount cannot be negative.')
-        return
-      }
-      if (paidAmount > totalContract) {
-        setQuickActionError('Paid amount cannot exceed contract amount.')
-        return
-      }
-
-      addVendor({
-        name: vendorForm.name,
-        role: '',
-        phone: vendorForm.phone,
-        email: '',
-        totalContract,
-        paidAmount,
-        notes: vendorForm.notes,
-      })
-      closeQuickActionModal()
-    }
+    closeQuickAction()
   }
 
-  const quickActionTitle =
-    activeTab === 'todos'
-      ? 'New Task'
-      : activeTab === 'payments'
-        ? 'Add Payment'
-        : activeTab === 'chat'
-          ? ''
-        : activeTab === 'invites'
-          ? 'Add Event'
-          : 'Add Vendor'
-
-  const quickActionSubmitLabel =
-    activeTab === 'todos'
-      ? 'Save Task'
-      : activeTab === 'payments'
-        ? 'Save Payment'
-        : activeTab === 'chat'
-          ? ''
-        : activeTab === 'invites'
-          ? 'Save Event'
-          : 'Save Vendor'
+  const focusFor = (tab: ItemTab) => (focus?.tab === tab ? focus : null)
+  const screenKey = (tab: ItemTab) => `${tab}-${focusFor(tab)?.nonce ?? 0}`
 
   const activeScreen =
     activeTab === 'payments' ? (
-      <BudgetScreen onQuickActionVisibilityChange={setQuickActionVisible} />
+      <BudgetScreen
+        key={screenKey('payments')}
+        initialItemId={focusFor('payments')?.id}
+        onOpenItem={openItem}
+        onQuickActionVisibilityChange={setQuickActionVisible}
+      />
     ) : activeTab === 'chat' ? (
-      <ChatScreen />
+      <ChatScreen onOpenItem={openItem} />
     ) : activeTab === 'invites' ? (
-      <InviteChecklistScreen />
+      <InviteChecklistScreen
+        key={screenKey('invites')}
+        initialItemId={focusFor('invites')?.id}
+        onOpenItem={openItem}
+        onQuickActionVisibilityChange={setQuickActionVisible}
+      />
     ) : activeTab === 'vendors' ? (
-      <DirectoryScreen />
+      <DirectoryScreen
+        key={screenKey('vendors')}
+        initialItemId={focusFor('vendors')?.id}
+        onQuickActionVisibilityChange={setQuickActionVisible}
+      />
     ) : (
-      <TodoTimelineScreen onQuickActionVisibilityChange={setQuickActionVisible} />
+      <TodoTimelineScreen
+        key={screenKey('todos')}
+        initialItemId={focusFor('todos')?.id}
+        onQuickActionVisibilityChange={setQuickActionVisible}
+      />
     )
+
+  const eventOptions = data.guests.events.map((event) => (
+    <option key={event.id} value={event.id}>
+      {event.name}
+    </option>
+  ))
+
+  const navButton = (key: ItemTab) => {
+    const tab = tabs.find((entry) => entry.key === key)
+    if (!tab) return null
+    const Icon = tab.icon
+    const isActive = activeTab === key
+    return (
+      <button
+        key={key}
+        type="button"
+        onClick={() => switchTab(key)}
+        className={`flex w-14 flex-col items-center justify-center py-1 ${isActive ? 'text-charcoal' : 'text-muted-taupe hover:text-charcoal'}`}
+        aria-label={`Open ${tab.label}`}
+      >
+        <Icon className="mb-1 h-[18px] w-[18px]" />
+        <span className={`text-[11px] ${isActive ? 'font-bold' : 'font-medium'}`}>{tab.label}</span>
+      </button>
+    )
+  }
 
   return (
     <main className="h-dvh overflow-hidden bg-[#F4F0E8]">
-      <div className="relative mx-auto flex h-full w-full max-w-[460px] flex-col px-2 sm:px-3">
-        <header className="flex shrink-0 items-center gap-2.5 border-b border-brass-line/70 px-2 pb-2.5 pt-3 sm:px-2.5">
-          <span className="flex h-8 w-8 items-center justify-center rounded-full border border-brass-line bg-champagne-light">
-            <svg className="h-[18px] w-[18px] text-champagne" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden>
-              <path d="M12 3C12 3 9.5 6.2 9.5 8.2C9.5 9.6 10.6 10.7 12 10.7C13.4 10.7 14.5 9.6 14.5 8.2C14.5 6.2 12 3 12 3Z" />
-              <path d="M4 14C4 17.5 7.6 20 12 20C16.4 20 20 17.5 20 14H4Z" />
-              <path d="M8 20H16" />
-            </svg>
+      <div className="relative mx-auto flex h-full w-full max-w-[460px] flex-col px-1.5 sm:px-3">
+        <header className="flex shrink-0 items-center gap-2 border-b border-brass-line/70 px-1.5 pb-2 pt-2.5">
+          <span className="flex h-7 w-7 items-center justify-center rounded-full border border-brass-line bg-champagne-light">
+            <DiyaIcon className="h-4 w-4 text-champagne" />
           </span>
-          <span className="font-display text-xl font-semibold leading-none tracking-tight text-charcoal">Subhamastu</span>
-          <span className="hidden border-l border-brass-line pl-2 text-[11px] leading-none text-muted-taupe min-[420px]:inline">Telugu Wedding Atelier</span>
-          <div className="ml-auto flex items-center gap-1.5">
+          <span className="text-lg font-extrabold leading-none tracking-tight text-charcoal">Subhamastu</span>
+          <span className="border-l border-brass-line pl-2 text-[11px] font-medium leading-none text-muted-taupe">Wedding Planner</span>
+          <div className="ml-auto flex items-center gap-1">
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-brass-line bg-silk font-display text-base font-semibold text-charcoal"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-brass-line bg-silk text-sm font-bold text-charcoal"
               title={`Signed in as ${profile.name}`}
               aria-label={`Signed in as ${profile.name}`}
             >
@@ -430,440 +257,265 @@ function App({ profile, onLogout }: AppProps) {
         {syncError ? (
           <div
             role="status"
-            className="mx-2 mt-2 flex shrink-0 items-start gap-2 rounded-xl border border-blush-deep/30 bg-blush-soft px-3 py-2 text-[11px] leading-snug text-blush-deep sm:mx-2.5"
+            className="mx-1.5 mt-2 flex shrink-0 items-start gap-2 rounded-xl border border-blush-deep/30 bg-blush-soft px-3 py-2 text-xs leading-snug text-blush-deep"
           >
             <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
             <span>
-              <span className="font-semibold">Not synced.</span> Changes aren't being saved right now — retrying
-              automatically.
+              <span className="font-semibold">Not synced.</span> Changes aren't being saved right now — retrying automatically.
             </span>
           </div>
         ) : null}
 
         {activeTab === 'chat' ? (
-          <div className="flex min-h-0 flex-1 flex-col px-2 pt-2 sm:px-2.5">{activeScreen}</div>
+          <div className="flex min-h-0 flex-1 flex-col px-1.5 pt-1.5">{activeScreen}</div>
         ) : (
           <div className="clean-scroll min-h-0 flex-1 overflow-y-auto pb-20">
-            <div className="px-2 pb-2 pt-2 sm:px-2.5">
-              <section>{activeScreen}</section>
-            </div>
+            <div className="px-1.5 pb-2 pt-1.5">{activeScreen}</div>
           </div>
         )}
 
         {isQuickActionVisible && activeTab !== 'chat' ? (
           <button
             type="button"
-            onClick={openQuickActionModal}
-            className="absolute bottom-[84px] right-4 z-[2147483100] inline-flex items-center gap-1.5 rounded-full bg-sindoor px-4 py-2.5 text-xs font-medium tracking-wide text-white shadow-float"
-            aria-label={`Add ${activeTabConfig?.addLabel || 'Item'}`}
+            onClick={openQuickAction}
+            className="absolute bottom-[84px] right-4 z-[2147483100] inline-flex items-center gap-1.5 rounded-full bg-sindoor px-4 py-2.5 text-sm font-semibold text-white shadow-float"
+            aria-label={`Add ${activeTabConfig?.addLabel ?? 'item'}`}
           >
-            <CirclePlus className="h-3.5 w-3.5" />
-            Add {activeTabConfig?.addLabel || 'Item'}
+            <CirclePlus className="h-4 w-4" />
+            Add {activeTabConfig?.addLabel}
           </button>
         ) : null}
 
-        <nav className="z-[2147483000] flex h-[72px] shrink-0 items-center justify-around rounded-t-[22px] border border-b-0 border-brass-line bg-silk/95 px-2 backdrop-blur-md">
-            {tabs.slice(0, 2).map((tab) => {
-              const isActive = tab.key === activeTab
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(tab.key)
-                    setQuickActionVisible(true)
-                  }}
-                  className={`flex w-14 flex-col items-center justify-center py-1 ${
-                    isActive ? 'text-charcoal' : 'text-muted-taupe hover:text-charcoal'
-                  }`}
-                  aria-label={`Open ${tab.label}`}
-                >
-                  <Icon className="mb-1 h-[18px] w-[18px]" />
-                  <span className="text-[10px] font-medium">{tab.label}</span>
-                </button>
-              )
-            })}
-
-            <div className="relative flex flex-col items-center">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('chat')
-                  setQuickActionVisible(false)
-                }}
-                className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-ivory bg-charcoal text-ivory shadow-md"
-                aria-label="Open AI chat"
-              >
-                <svg className="h-5 w-5 text-champagne" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
-                  <path d="M12 3C12 3 9.5 6.2 9.5 8.2C9.5 9.6 10.6 10.7 12 10.7C13.4 10.7 14.5 9.6 14.5 8.2C14.5 6.2 12 3 12 3Z" />
-                  <path d="M4 14C4 17.5 7.6 20 12 20C16.4 20 20 17.5 20 14H4Z" />
-                </svg>
-              </button>
-              <span className={`mt-1 text-[10px] font-medium ${activeTab === 'chat' ? 'text-charcoal' : 'text-muted-taupe'}`}>Mitra</span>
-            </div>
-
-            {tabs.slice(2).map((tab) => {
-              const isActive = tab.key === activeTab
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.key}
-                  type="button"
-                  onClick={() => {
-                    setActiveTab(tab.key)
-                    setQuickActionVisible(true)
-                  }}
-                  className={`flex w-14 flex-col items-center justify-center py-1 ${
-                    isActive ? 'text-charcoal' : 'text-muted-taupe hover:text-charcoal'
-                  }`}
-                  aria-label={`Open ${tab.label}`}
-                >
-                  <Icon className="mb-1 h-[18px] w-[18px]" />
-                  <span className="text-[10px] font-medium">{tab.label}</span>
-                </button>
-              )
-            })}
+        <nav className="z-[2147483000] flex h-[68px] shrink-0 items-center justify-around rounded-t-[22px] border border-b-0 border-brass-line bg-silk/95 px-2 backdrop-blur-md">
+          {navButton('todos')}
+          {navButton('payments')}
+          <div className="relative flex flex-col items-center">
+            <button
+              type="button"
+              onClick={() => switchTab('chat')}
+              className="flex h-12 w-12 items-center justify-center rounded-full border-[3px] border-ivory bg-charcoal text-ivory shadow-md"
+              aria-label="Open Mitra AI chat"
+            >
+              <DiyaIcon className="h-5 w-5 text-champagne" />
+            </button>
+            <span className={`mt-1 text-[11px] ${activeTab === 'chat' ? 'font-bold text-charcoal' : 'font-medium text-muted-taupe'}`}>
+              Mitra AI
+            </span>
+          </div>
+          {navButton('invites')}
+          {navButton('vendors')}
         </nav>
       </div>
 
-      {isQuickActionOpen ? (
-        <div className="fixed inset-0 z-[2147483200] flex items-end justify-center bg-charcoal/35 px-2 pb-2 pt-8 sm:items-center sm:px-4 sm:pb-4 sm:pt-4">
-          <div className="animate-modal-in flex max-h-[88dvh] w-full max-w-[500px] flex-col overflow-hidden rounded-[26px] border border-champagne-border bg-ivory-card shadow-card-warm sm:rounded-2xl">
-              <div className="gopuram-divider" />
-              <div className="p-3.5 sm:p-4">
-              <div className="mb-4 flex items-center justify-between">
+      {isQuickActionOpen && activeTabConfig ? (
+        <SheetModal title={`New ${activeTabConfig.addLabel.toLowerCase()}`} onClose={closeQuickAction}>
+          <form onSubmit={handleQuickSubmit} className="space-y-3">
+            <div>
+              <FieldLabel>
+                {activeTab === 'invites' ? 'Event name *' : activeTab === 'vendors' ? 'Vendor name *' : activeTab === 'payments' ? 'Payment title *' : 'Title *'}
+              </FieldLabel>
+              <input
+                value={form.title}
+                onChange={(event) => setForm({ ...form, title: event.target.value })}
+                placeholder={
+                  activeTab === 'invites'
+                    ? 'e.g. Pellikuthuru'
+                    : activeTab === 'vendors'
+                      ? 'e.g. Sai Florists'
+                      : activeTab === 'payments'
+                        ? 'e.g. Kalyana Mandapam advance'
+                        : 'e.g. Confirm Purohit availability'
+                }
+                autoFocus
+              />
+            </div>
+
+            {activeTab === 'todos' ? (
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-champagne">
-                    Quick Add
-                  </p>
-                  <h3 className="font-display text-2xl font-semibold text-charcoal sm:text-3xl">
-                    {quickActionTitle}
-                  </h3>
+                  <FieldLabel>Due date</FieldLabel>
+                  <input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} />
                 </div>
-                <button
-                  type="button"
-                  onClick={closeQuickActionModal}
-                  className="rounded-full border border-border-warm bg-white p-2 text-muted-taupe"
-                  aria-label="Close add form"
-                >
-                  <X className="h-4 w-4" />
-                </button>
+                <div>
+                  <FieldLabel>Priority</FieldLabel>
+                  <select value={form.priority} onChange={(event) => setForm({ ...form, priority: event.target.value as TodoPriority })}>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Type</FieldLabel>
+                  <select value={form.kind} onChange={(event) => setForm({ ...form, kind: event.target.value as TodoKind })}>
+                    <option value="task">Task</option>
+                    <option value="buy">Item to buy</option>
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Event</FieldLabel>
+                  <select value={form.eventId} onChange={(event) => setForm({ ...form, eventId: event.target.value })}>
+                    <option value="">Not linked</option>
+                    {eventOptions}
+                  </select>
+                </div>
               </div>
+            ) : null}
 
-              <form onSubmit={handleQuickActionSubmit} className="flex min-h-0 flex-1 flex-col">
-                <div className="space-y-2.5 overflow-y-auto pr-1 sm:space-y-3">
-                  {activeTab === 'todos' ? (
-                    <>
-                      <input
-                        value={taskForm.title}
-                        onChange={(event) =>
-                          setTaskForm((current) => ({
-                            ...current,
-                            title: event.target.value,
-                          }))
-                        }
-                        placeholder="e.g., Confirm Purohit Garu availability"
-                      />
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        <input
-                          type="date"
-                          value={taskForm.dueDate}
-                          onChange={(event) =>
-                            setTaskForm((current) => ({
-                              ...current,
-                              dueDate: event.target.value,
-                            }))
-                          }
-                        />
-                        <select
-                          value={taskForm.priority}
-                          onChange={(event) =>
-                            setTaskForm((current) => ({
-                              ...current,
-                              priority: event.target.value as TodoPriority,
-                            }))
-                          }
-                          className="rounded-xl border border-border-warm bg-white px-3 py-2 text-sm text-charcoal"
-                          aria-label="Task priority"
-                        >
-                          <option value="High">High</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Low">Low</option>
-                        </select>
-                      </div>
-                      <select
-                        value={taskForm.eventId}
-                        onChange={(event) =>
-                          setTaskForm((current) => ({
-                            ...current,
-                            eventId: event.target.value,
-                          }))
-                        }
-                        className="rounded-xl border border-border-warm bg-white px-3 py-2 text-sm text-charcoal"
-                        aria-label="Link task to ceremony"
-                      >
-                        <option value="">No ceremony link</option>
-                        {data.guests.events.map((event) => (
-                          <option key={event.id} value={event.id}>
-                            {event.name}
-                          </option>
-                        ))}
-                      </select>
-                    </>
-                  ) : null}
+            {activeTab === 'payments' ? (
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <FieldLabel>Total (₹) *</FieldLabel>
+                  <input type="number" inputMode="numeric" min={1} value={form.total} onChange={(event) => setForm({ ...form, total: event.target.value })} />
+                </div>
+                <div>
+                  <FieldLabel>Paid (₹)</FieldLabel>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={form.paid}
+                    onChange={(event) => setForm({ ...form, paid: event.target.value })}
+                    placeholder="Blank = fully paid"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Category</FieldLabel>
+                  <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as ExpenseCategory })}>
+                    {EXPENSE_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Due date</FieldLabel>
+                  <input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} />
+                </div>
+                <div className="col-span-2">
+                  <FieldLabel>Event</FieldLabel>
+                  <select value={form.eventId} onChange={(event) => setForm({ ...form, eventId: event.target.value })}>
+                    <option value="">Not linked</option>
+                    {eventOptions}
+                  </select>
+                </div>
+              </div>
+            ) : null}
 
-                  {activeTab === 'payments' ? (
-                    <>
-                      <input
-                        value={expenseForm.title}
-                        onChange={(event) =>
-                          setExpenseForm((current) => ({ ...current, title: event.target.value }))
-                        }
-                        placeholder="e.g., Kalyana Mandapam advance"
-                      />
-                      <StyledDropdown
-                        value={expenseForm.category}
-                        options={expenseCategoryOptions}
-                        onChange={(value) =>
-                          setExpenseForm((current) => ({
-                            ...current,
-                            category: value,
-                          }))
-                        }
-                        ariaLabel="Payment category"
-                      />
-                      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-                        <input
-                          type="number"
-                          min={1}
-                          value={expenseForm.totalAmount}
-                          onChange={(event) =>
-                            setExpenseForm((current) => ({
-                              ...current,
-                              totalAmount: event.target.value,
-                            }))
-                          }
-                          placeholder="Total amount"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          value={expenseForm.paidAmount}
-                          onChange={(event) =>
-                            setExpenseForm((current) => ({
-                              ...current,
-                              paidAmount: event.target.value,
-                            }))
-                          }
-                          placeholder="Paid amount"
-                        />
-                        <input
-                          type="date"
-                          value={expenseForm.dueDate}
-                          onChange={(event) =>
-                            setExpenseForm((current) => ({
-                              ...current,
-                              dueDate: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                    </>
-                  ) : null}
-
-                  {activeTab === 'invites' ? (
-                    <>
-                      <input
-                        value={inviteForm.eventName}
-                        onChange={(event) =>
-                          setInviteForm((current) => ({
-                            ...current,
-                            eventName: event.target.value,
-                          }))
-                        }
-                        placeholder="Event name (e.g. Pellikuthuru)"
-                      />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          type="date"
-                          value={inviteForm.eventDate}
-                          onChange={(event) =>
-                            setInviteForm((current) => ({
-                              ...current,
-                              eventDate: event.target.value,
-                            }))
-                          }
-                        />
-                        <input
-                          value={inviteForm.eventDetails}
-                          onChange={(event) =>
-                            setInviteForm((current) => ({
-                              ...current,
-                              eventDetails: event.target.value,
-                            }))
-                          }
-                          placeholder="Basic details (notes)"
-                        />
-                      </div>
-                      <input
-                        value={inviteForm.memberInput}
-                        onChange={(event) =>
-                          setInviteForm((current) => ({
-                            ...current,
-                            memberInput: event.target.value,
-                          }))
-                        }
-                        onKeyDown={handleInviteMemberInputKeyDown}
-                        placeholder="Type invitee name and press Enter"
-                      />
-                      <div className="flex items-center justify-end">
+            {activeTab === 'invites' ? (
+              <div className="space-y-2.5">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <FieldLabel>Date</FieldLabel>
+                    <input type="date" value={form.dueDate} onChange={(event) => setForm({ ...form, dueDate: event.target.value })} />
+                  </div>
+                  <div>
+                    <FieldLabel>Details</FieldLabel>
+                    <input value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} placeholder="Venue, timing" />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Invitees</FieldLabel>
+                  <input
+                    value={form.memberInput}
+                    onChange={(event) => setForm({ ...form, memberInput: event.target.value })}
+                    onKeyDown={handleMemberKeyDown}
+                    placeholder="Type a name and press Enter"
+                  />
+                </div>
+                {form.members.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {form.members.map((member) => (
+                      <span key={member} className="inline-flex items-center gap-1 rounded-full border border-brass-line bg-ivory px-2.5 py-1 text-xs text-charcoal">
+                        {member}
                         <button
                           type="button"
-                          onClick={() => addInviteeChip(inviteForm.memberInput)}
-                          className="rounded-lg border border-border-warm bg-white px-3 py-1.5 text-xs font-semibold text-charcoal"
+                          onClick={() => setForm({ ...form, members: form.members.filter((entry) => entry !== member) })}
+                          className="text-muted-taupe"
+                          aria-label={`Remove ${member}`}
                         >
-                          Add member
+                          <X className="h-3 w-3" />
                         </button>
-                      </div>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {data.guests.events.length > 0 ? (
+                  <div>
+                    <FieldLabel>Copy guests from</FieldLabel>
+                    <div className="flex flex-wrap gap-1.5">
+                      {data.guests.events.map((event) => {
+                        const selected = form.copyFromEventIds.includes(event.id)
+                        return (
+                          <button
+                            key={event.id}
+                            type="button"
+                            onClick={() =>
+                              setForm({
+                                ...form,
+                                copyFromEventIds: selected
+                                  ? form.copyFromEventIds.filter((id) => id !== event.id)
+                                  : [...form.copyFromEventIds, event.id],
+                              })
+                            }
+                            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                              selected ? 'bg-charcoal text-ivory' : 'border border-brass-line bg-ivory text-charcoal'
+                            }`}
+                          >
+                            {event.name} ({event.invitees.length})
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
-                      {inviteForm.members.length > 0 ? (
-                        <div className="flex flex-wrap gap-2 rounded-xl border border-border-warm bg-white px-3 py-3">
-                          {inviteForm.members.map((member) => (
-                            <span
-                              key={member}
-                              className="inline-flex items-center gap-1 rounded-full border border-champagne/35 bg-champagne-light px-2.5 py-1 text-xs font-semibold text-charcoal"
-                            >
-                              {member}
-                              <button
-                                type="button"
-                                onClick={() => removeInviteeChip(member)}
-                                className="rounded-full p-0.5 text-muted-taupe hover:bg-white"
-                                aria-label={`Remove ${member}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-muted-taupe">
-                          Press Enter after each name to create removable chips.
-                        </p>
-                      )}
-
-                      <div className="space-y-2 rounded-xl border border-border-warm bg-white px-3 py-3">
-                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-taupe">
-                          Quick add from previous events
-                        </p>
-                        {data.guests.events.length === 0 ? (
-                          <p className="text-xs text-muted-taupe">
-                            No previous events available yet.
-                          </p>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            {data.guests.events.map((event) => {
-                              const isSelected = inviteForm.quickAddEventIds.includes(event.id)
-                              return (
-                                <button
-                                  key={event.id}
-                                  type="button"
-                                  onClick={() => toggleQuickAddEventSelection(event.id)}
-                                  className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${
-                                    isSelected
-                                      ? 'border-charcoal bg-charcoal text-ivory-bg'
-                                      : 'border-border-warm bg-ivory-bg text-charcoal'
-                                  }`}
-                                >
-                                  {event.name} ({event.invitees.length})
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  ) : null}
-
-                  {activeTab === 'vendors' ? (
-                    <>
-                      <input
-                        value={vendorForm.name}
-                        onChange={(event) =>
-                          setVendorForm((current) => ({ ...current, name: event.target.value }))
-                        }
-                        placeholder="Vendor or artist name"
-                      />
-                      <input
-                        value={vendorForm.phone}
-                        onChange={(event) =>
-                          setVendorForm((current) => ({ ...current, phone: event.target.value }))
-                        }
-                        placeholder="Phone"
-                      />
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <input
-                          type="number"
-                          min={0}
-                          value={vendorForm.totalContract}
-                          onChange={(event) =>
-                            setVendorForm((current) => ({
-                              ...current,
-                              totalContract: event.target.value,
-                            }))
-                          }
-                          placeholder="Contract amount"
-                        />
-                        <input
-                          type="number"
-                          min={0}
-                          value={vendorForm.paidAmount}
-                          onChange={(event) =>
-                            setVendorForm((current) => ({
-                              ...current,
-                              paidAmount: event.target.value,
-                            }))
-                          }
-                          placeholder="Paid amount"
-                        />
-                      </div>
-                      <textarea
-                        value={vendorForm.notes}
-                        onChange={(event) =>
-                          setVendorForm((current) => ({ ...current, notes: event.target.value }))
-                        }
-                        placeholder="Notes"
-                        className="min-h-[88px] w-full resize-y rounded-xl border border-border-warm bg-white px-3 py-2 text-sm text-charcoal shadow-sm focus:border-champagne focus:outline-none focus:ring-2 focus:ring-champagne/20"
-                      />
-                    </>
-                  ) : null}
-
-                  {quickActionError ? (
-                    <p className="rounded-xl border border-blush-deep/30 bg-blush-soft px-3 py-2 text-sm text-blush-deep">
-                      {quickActionError}
-                    </p>
-                  ) : null}
+            {activeTab === 'vendors' ? (
+              <div className="space-y-2.5">
+                <div>
+                  <FieldLabel>Phone</FieldLabel>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={form.phone}
+                    onChange={(event) => setForm({ ...form, phone: sanitizePhone(event.target.value) })}
+                    placeholder="9849000000"
+                  />
                 </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <FieldLabel>Contract (₹)</FieldLabel>
+                    <input type="number" inputMode="numeric" min={0} value={form.total} onChange={(event) => setForm({ ...form, total: event.target.value })} />
+                  </div>
+                  <div>
+                    <FieldLabel>Paid (₹)</FieldLabel>
+                    <input type="number" inputMode="numeric" min={0} value={form.paid} onChange={(event) => setForm({ ...form, paid: event.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Event</FieldLabel>
+                  <select value={form.eventId} onChange={(event) => setForm({ ...form, eventId: event.target.value })}>
+                    <option value="">Not linked</option>
+                    {eventOptions}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Notes</FieldLabel>
+                  <textarea value={form.notes} onChange={(event) => setForm({ ...form, notes: event.target.value })} rows={2} className="resize-y" />
+                </div>
+              </div>
+            ) : null}
 
-                <button
-                  type="submit"
-                  className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blush-deep py-2.5 text-sm font-semibold text-ivory-bg"
-                >
-                  {activeTab === 'payments' ? (
-                    <ReceiptText className="h-4 w-4" />
-                  ) : activeTab === 'vendors' ? (
-                    <UserRound className="h-4 w-4" />
-                  ) : (
-                    <CirclePlus className="h-4 w-4" />
-                  )}
-                  {quickActionSubmitLabel}
-                </button>
-              </form>
-            </div>
-          </div>
-        </div>
+            {quickError ? <p className="rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">{quickError}</p> : null}
+            <button type="submit" className="inline-flex w-full items-center justify-center gap-1.5 rounded-2xl bg-sindoor py-3 text-sm font-semibold text-white">
+              <CirclePlus className="h-4 w-4" />
+              Save {activeTabConfig.addLabel.toLowerCase()}
+            </button>
+          </form>
+        </SheetModal>
       ) : null}
-
     </main>
   )
 }

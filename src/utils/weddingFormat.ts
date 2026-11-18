@@ -15,7 +15,47 @@ export function formatCurrencyInr(value: number) {
 }
 
 export function formatDate(value: string) {
-  return dateFormatter.format(new Date(value))
+  const parsed = new Date(value)
+  return Number.isNaN(parsed.getTime()) ? 'No date' : dateFormatter.format(parsed)
+}
+
+export function todayString() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+// Phone fields accept digits only, with an optional leading "+" for country codes.
+export function sanitizePhone(value: string) {
+  const trimmed = value.trim()
+  const digits = trimmed.replace(/\D/g, '').slice(0, 15)
+  return trimmed.startsWith('+') ? `+${digits}` : digits
+}
+
+export function telHref(phone: string) {
+  return `tel:${sanitizePhone(phone)}`
+}
+
+export function expenseStatusFor(totalAmount: number, paidAmount: number) {
+  if (paidAmount >= totalAmount) return 'Paid' as const
+  if (paidAmount > 0) return 'Deposit Paid' as const
+  return 'Due Soon' as const
+}
+
+// A blank "paid" field means the payment is already settled in full.
+export function resolvePaidAmount(rawPaid: string, totalAmount: number) {
+  if (!rawPaid.trim()) return totalAmount
+  return Number(rawPaid)
+}
+
+// Upcoming events first (soonest at the top), then past events (most recent first), undated last.
+export function compareEventsNearestFirst(left: { date?: string }, right: { date?: string }) {
+  const today = todayString()
+  const rank = (date?: string) => (!date ? 2 : date >= today ? 0 : 1)
+  const leftRank = rank(left.date)
+  const rightRank = rank(right.date)
+  if (leftRank !== rightRank) return leftRank - rightRank
+  if (leftRank === 0) return (left.date ?? '').localeCompare(right.date ?? '')
+  if (leftRank === 1) return (right.date ?? '').localeCompare(left.date ?? '')
+  return 0
 }
 
 export function calculateCountdown(targetDate: string, nowValue: number) {

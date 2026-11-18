@@ -1,490 +1,580 @@
-import { ArrowLeft, Check, X } from 'lucide-react'
-import { useEffect, useMemo, useState, type KeyboardEvent } from 'react'
-import { EmptyStateCard, PageHeader } from '../components/ScreenChrome'
+import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react'
+import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { PaymentCard, SectionTitle, TodoCard, VendorCard } from '../components/Cards'
+import { DetailHeader, EmptyStateCard, FieldLabel, PageHeader, SheetModal } from '../components/ScreenChrome'
 import { useWedding } from '../context/useWedding'
-import type { ExpenseCategory, GuestEventItem, TodoPriority } from '../types/wedding'
-import { formatCurrencyInr, formatDate } from '../utils/weddingFormat'
+import type { OpenItem } from '../navigation'
+import { EXPENSE_CATEGORIES, type ExpenseCategory, type GuestEventItem, type TodoPriority } from '../types/wedding'
+import {
+  compareEventsNearestFirst,
+  formatDate,
+  resolvePaidAmount,
+  sanitizePhone,
+  todayString,
+} from '../utils/weddingFormat'
 
-type ComposerKind = 'todo' | 'payment' | 'vendor' | 'invite'
+type ComposerKind = 'invite' | 'todo' | 'buy' | 'payment' | 'vendor'
 
-const expenseCategories: ExpenseCategory[] = ['Venue', 'Catering', 'Attire', 'Photography', 'Decor']
+const composerTabs: Array<[ComposerKind, string]> = [
+  ['invite', 'Invitee'],
+  ['todo', 'To-Do'],
+  ['buy', 'Item to buy'],
+  ['payment', 'Payment'],
+  ['vendor', 'Vendor'],
+]
 
-function getCurrentDateString() {
-  return new Date().toISOString().slice(0, 10)
+interface ComposerState {
+  title: string
+  dueDate: string
+  priority: TodoPriority
+  category: ExpenseCategory
+  total: string
+  paid: string
+  phone: string
+  notes: string
+  inviteeInput: string
+  invitees: string[]
+}
+
+function emptyComposer(): ComposerState {
+  return {
+    title: '',
+    dueDate: todayString(),
+    priority: 'Medium',
+    category: 'Others',
+    total: '',
+    paid: '',
+    phone: '',
+    notes: '',
+    inviteeInput: '',
+    invitees: [],
+  }
+}
+
+function normalizeName(value: string) {
+  return value.trim().replace(/\s+/g, ' ')
 }
 
 function EventSummaryCard({
   event,
-  todoCount,
-  paymentCount,
-  vendorCount,
+  counts,
   onSelect,
 }: {
   event: GuestEventItem
-  todoCount: number
-  paymentCount: number
-  vendorCount: number
+  counts: { todos: number; buy: number; payments: number; vendors: number }
   onSelect: () => void
 }) {
-  const actionItems = event.invitees.length + todoCount + paymentCount + vendorCount
+  const confirmed = event.invitees.filter((invitee) => invitee.completed).length
+  const stats: Array<[string, string]> = [
+    ['Invites', `${confirmed}/${event.invitees.length}`],
+    ['To-Dos', String(counts.todos)],
+    ['To buy', String(counts.buy)],
+    ['Payments', String(counts.payments)],
+    ['Vendors', String(counts.vendors)],
+  ]
   return (
     <button
       type="button"
       onClick={onSelect}
-      className="w-full space-y-3 rounded-2xl border border-brass-line bg-silk p-4 text-left shadow-soft transition-all hover:border-champagne/60"
+      className="w-full space-y-2 rounded-2xl border border-brass-line bg-silk p-3 text-left shadow-soft transition-colors hover:border-champagne/60"
     >
       <div className="flex items-start justify-between gap-2">
-        <div>
-          <h3 className="font-display text-[36px] font-semibold leading-tight text-charcoal">{event.name}</h3>
-          <p className="mt-0.5 text-[11px] font-medium tabular-nums text-champagne">
+        <div className="min-w-0">
+          <h3 className="truncate text-base font-bold text-charcoal">{event.name}</h3>
+          <p className="text-xs font-semibold tabular-nums text-champagne">
             {event.date ? formatDate(event.date) : 'Date not set'}
           </p>
         </div>
-        <span className="rounded-full bg-[#F3EFE8] px-2.5 py-1 text-[10px] font-medium text-charcoal tabular-nums">
-          {actionItems} items
-        </span>
       </div>
-
-      {event.details ? <p className="text-xs leading-relaxed text-muted-taupe">{event.details}</p> : null}
-
-      <div className="grid grid-cols-4 gap-1 border-t border-brass-line/70 pt-2.5 text-center text-[11px] tabular-nums">
-        <div>
-          <span className="font-semibold text-charcoal">{event.invitees.length}</span>{' '}
-          <span className="text-muted-taupe">Invites</span>
-        </div>
-        <div>
-          <span className="font-semibold text-charcoal">{todoCount}</span>{' '}
-          <span className="text-muted-taupe">To-Dos</span>
-        </div>
-        <div>
-          <span className="font-semibold text-charcoal">{paymentCount}</span>{' '}
-          <span className="text-muted-taupe">Payments</span>
-        </div>
-        <div>
-          <span className="font-semibold text-charcoal">{vendorCount}</span>{' '}
-          <span className="text-muted-taupe">Vendors</span>
-        </div>
+      {event.details ? <p className="line-clamp-2 text-xs text-muted-taupe">{event.details}</p> : null}
+      <div className="grid grid-cols-5 gap-1 border-t border-brass-line/70 pt-2 text-center tabular-nums">
+        {stats.map(([label, value]) => (
+          <div key={label}>
+            <p className="text-sm font-bold text-charcoal">{value}</p>
+            <p className="text-[10px] text-muted-taupe">{label}</p>
+          </div>
+        ))}
       </div>
     </button>
   )
 }
 
-export function InviteChecklistScreen() {
+interface InviteChecklistScreenProps {
+  onQuickActionVisibilityChange?: (visible: boolean) => void
+  initialItemId?: string
+  onOpenItem?: OpenItem
+}
+
+export function InviteChecklistScreen({
+  onQuickActionVisibilityChange,
+  initialItemId,
+  onOpenItem,
+}: InviteChecklistScreenProps) {
   const {
     data,
     addEventInvitees,
     addExpense,
     addTodo,
     addVendor,
+    toggleTodo,
     toggleEventInvitee,
     removeEventInvitee,
     removeGuestEvent,
+    updateGuestEvent,
+    markExpensePaid,
+    markVendorPaid,
   } = useWedding()
 
-  const [selectedEventId, setSelectedEventId] = useState('')
-  const [activeComposer, setActiveComposer] = useState<ComposerKind | null>(null)
-  const [composerError, setComposerError] = useState('')
-
-  const [todoTitle, setTodoTitle] = useState('')
-  const [todoDueDate, setTodoDueDate] = useState(getCurrentDateString())
-  const [todoPriority, setTodoPriority] = useState<TodoPriority>('Medium')
-
-  const [paymentTitle, setPaymentTitle] = useState('')
-  const [paymentCategory, setPaymentCategory] = useState<ExpenseCategory>('Venue')
-  const [paymentTotal, setPaymentTotal] = useState('')
-  const [paymentPaid, setPaymentPaid] = useState('0')
-  const [paymentDueDate, setPaymentDueDate] = useState(getCurrentDateString())
-
-  const [vendorName, setVendorName] = useState('')
-  const [vendorPhone, setVendorPhone] = useState('')
-  const [vendorTotalContract, setVendorTotalContract] = useState('')
-  const [vendorPaidAmount, setVendorPaidAmount] = useState('0')
-  const [vendorNotes, setVendorNotes] = useState('')
-
-  const [inviteeInput, setInviteeInput] = useState('')
-  const [inviteeChips, setInviteeChips] = useState<string[]>([])
-
-  const events = data.guests.events
-  const selectedEvent = useMemo(
-    () => events.find((event) => event.id === selectedEventId) ?? null,
-    [events, selectedEventId],
+  const [selectedEventId, setSelectedEventId] = useState(() =>
+    initialItemId && data.guests.events.some((event) => event.id === initialItemId) ? initialItemId : '',
   )
+  const [composerKind, setComposerKind] = useState<ComposerKind | null>(null)
+  const [composer, setComposer] = useState<ComposerState>(emptyComposer)
+  const [composerError, setComposerError] = useState('')
+  const [isEditingEvent, setEditingEvent] = useState(false)
+  const [eventForm, setEventForm] = useState({ name: '', date: '', details: '', notes: '' })
+  const [eventFormError, setEventFormError] = useState('')
+  const [notesDraft, setNotesDraft] = useState<string | null>(null)
+  const [inviteSearch, setInviteSearch] = useState('')
+  const [buyDraft, setBuyDraft] = useState('')
+  const [confirmRemove, setConfirmRemove] = useState(false)
+
+  const events = useMemo(() => [...data.guests.events].sort(compareEventsNearestFirst), [data.guests.events])
+  const selectedEvent = data.guests.events.find((event) => event.id === selectedEventId) ?? null
 
   useEffect(() => {
-    if (!activeComposer) {
-      return
-    }
-    const previousBodyOverflow = document.body.style.overflow
-    const previousHtmlOverflow = document.documentElement.style.overflow
-    document.body.style.overflow = 'hidden'
-    document.documentElement.style.overflow = 'hidden'
-    return () => {
-      document.body.style.overflow = previousBodyOverflow
-      document.documentElement.style.overflow = previousHtmlOverflow
-    }
-  }, [activeComposer])
+    if (!onQuickActionVisibilityChange) return
+    onQuickActionVisibilityChange(!selectedEvent)
+    return () => onQuickActionVisibilityChange(true)
+  }, [onQuickActionVisibilityChange, selectedEvent])
 
-  function resetComposer() {
-    const today = getCurrentDateString()
-    setComposerError('')
-    setActiveComposer(null)
-    setTodoTitle('')
-    setTodoDueDate(today)
-    setTodoPriority('Medium')
-    setPaymentTitle('')
-    setPaymentCategory('Venue')
-    setPaymentTotal('')
-    setPaymentPaid('0')
-    setPaymentDueDate(today)
-    setVendorName('')
-    setVendorPhone('')
-    setVendorTotalContract('')
-    setVendorPaidAmount('0')
-    setVendorNotes('')
-    setInviteeInput('')
-    setInviteeChips([])
+  function openEvent(id: string) {
+    setSelectedEventId(id)
+    setInviteSearch('')
+    setNotesDraft(null)
+    setConfirmRemove(false)
+  }
+
+  function closeEvent() {
+    setSelectedEventId('')
+    setComposerKind(null)
+    setEditingEvent(false)
+    setNotesDraft(null)
+    setConfirmRemove(false)
   }
 
   function openComposer(kind: ComposerKind) {
-    resetComposer()
-    setActiveComposer(kind)
+    setComposer(emptyComposer())
+    setComposerError('')
+    setComposerKind(kind)
   }
 
-  function normalizeName(value: string) {
-    return value.trim().replace(/\s+/g, ' ')
+  function closeComposer() {
+    setComposerKind(null)
+    setComposerError('')
   }
 
   function addInviteeChip(rawName: string) {
-    const normalized = normalizeName(rawName)
-    if (!normalized) {
-      return
-    }
-    setInviteeChips((current) => {
-      if (current.some((name) => name.toLowerCase() === normalized.toLowerCase())) {
-        return current
-      }
-      return [...current, normalized]
-    })
-    setInviteeInput('')
+    const name = normalizeName(rawName)
+    if (!name) return
+    setComposer((current) =>
+      current.invitees.some((entry) => entry.toLowerCase() === name.toLowerCase())
+        ? { ...current, inviteeInput: '' }
+        : { ...current, inviteeInput: '', invitees: [...current.invitees, name] },
+    )
   }
 
-  function handleInviteInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key !== 'Enter') {
-      return
-    }
+  function handleInviteKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key !== 'Enter') return
     event.preventDefault()
-    addInviteeChip(inviteeInput)
+    addInviteeChip(composer.inviteeInput)
   }
 
-  function submitComposer() {
-    if (!selectedEvent || !activeComposer) {
-      return
-    }
+  function submitComposer(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!selectedEvent || !composerKind) return
     setComposerError('')
 
-    if (activeComposer === 'todo') {
-      if (!todoTitle.trim()) {
-        setComposerError('Please add a to-do title.')
+    if (composerKind === 'invite') {
+      const pending = normalizeName(composer.inviteeInput)
+      const names = pending ? [...composer.invitees, pending] : composer.invitees
+      if (names.length === 0) {
+        setComposerError('Add at least one name.')
+        return
+      }
+      addEventInvitees(selectedEvent.id, names)
+    } else if (composerKind === 'todo' || composerKind === 'buy') {
+      if (!composer.title.trim()) {
+        setComposerError(composerKind === 'buy' ? 'What do you need to buy?' : 'Please add a title.')
         return
       }
       addTodo(
-        {
-          title: todoTitle,
-          dueDate: todoDueDate,
-          priority: todoPriority,
-        },
+        { title: composer.title, dueDate: composer.dueDate, priority: composer.priority, kind: composerKind === 'buy' ? 'buy' : 'task' },
         selectedEvent.id,
       )
-      resetComposer()
-      return
-    }
-
-    if (activeComposer === 'payment') {
-      const totalAmount = Number(paymentTotal)
-      const paidAmount = Number(paymentPaid || 0)
-      if (!paymentTitle.trim()) {
-        setComposerError('Please add payment title.')
+    } else if (composerKind === 'payment') {
+      const total = Number(composer.total)
+      const paid = resolvePaidAmount(composer.paid, total)
+      if (!composer.title.trim()) {
+        setComposerError('Please add a payment title.')
         return
       }
-      if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
-        setComposerError('Total amount should be greater than 0.')
+      if (!Number.isFinite(total) || total <= 0) {
+        setComposerError('Total must be greater than ₹0.')
         return
       }
-      if (!Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > totalAmount) {
-        setComposerError('Paid amount must be between 0 and total amount.')
+      if (!Number.isFinite(paid) || paid < 0 || paid > total) {
+        setComposerError('Paid amount must be between ₹0 and the total.')
         return
       }
       addExpense(
-        {
-          title: paymentTitle,
-          vendorName: '',
-          category: paymentCategory,
-          totalAmount,
-          paidAmount,
-          dueDate: paymentDueDate,
-        },
+        { title: composer.title, vendorName: '', category: composer.category, totalAmount: total, paidAmount: paid, dueDate: composer.dueDate },
         selectedEvent.id,
       )
-      resetComposer()
-      return
-    }
-
-    if (activeComposer === 'vendor') {
-      const totalContract = Number(vendorTotalContract || 0)
-      const paidAmount = Number(vendorPaidAmount || 0)
-      if (!vendorName.trim()) {
-        setComposerError('Please add vendor name.')
+    } else {
+      const contract = Number(composer.total || 0)
+      const paid = Number(composer.paid || 0)
+      if (!composer.title.trim()) {
+        setComposerError('Please add the vendor name.')
         return
       }
-      if (!Number.isFinite(totalContract) || totalContract < 0 || !Number.isFinite(paidAmount) || paidAmount < 0 || paidAmount > totalContract) {
-        setComposerError('Invalid contract or paid amount.')
+      if (!Number.isFinite(contract) || contract < 0 || !Number.isFinite(paid) || paid < 0 || paid > contract) {
+        setComposerError('Check the contract and paid amounts.')
         return
       }
       addVendor(
-        {
-          name: vendorName,
-          role: '',
-          phone: vendorPhone,
-          email: '',
-          totalContract,
-          paidAmount,
-          notes: vendorNotes,
-        },
+        { name: composer.title, role: '', phone: composer.phone, email: '', totalContract: contract, paidAmount: paid, notes: composer.notes },
         selectedEvent.id,
       )
-      resetComposer()
-      return
     }
+    closeComposer()
+  }
 
-    const pendingName = normalizeName(inviteeInput)
-    const members = pendingName ? inviteeChips.concat(pendingName) : inviteeChips
-    if (members.length === 0) {
-      setComposerError('Please add at least one invitee.')
+  function startEditEvent(event: GuestEventItem) {
+    setEventForm({ name: event.name, date: event.date ?? '', details: event.details ?? '', notes: event.notes ?? '' })
+    setEventFormError('')
+    setEditingEvent(true)
+  }
+
+  function saveEvent(formEvent: FormEvent<HTMLFormElement>) {
+    formEvent.preventDefault()
+    if (!selectedEvent) return
+    if (!eventForm.name.trim()) {
+      setEventFormError('Event name is required.')
       return
     }
-    addEventInvitees(selectedEvent.id, members)
-    resetComposer()
+    updateGuestEvent(selectedEvent.id, eventForm)
+    setEditingEvent(false)
   }
 
   if (!selectedEvent) {
     return (
-      <section className="screen-animate">
-        <PageHeader kicker="Ceremonies" title="Events" rightMeta={`${events.length} rituals`} />
-        <div className="space-y-3 px-1 pb-2">
-          {events.length === 0 ? (
-            <EmptyStateCard
-              title="Plan Your Ceremonies"
-              subtitle="Organize Nischayathartham, Pellikuthuru, Muhurtham, and Reception with dedicated guest and vendor checklists."
-            />
-          ) : (
-            events.map((event) => (
+      <section className="screen-animate space-y-3">
+        <PageHeader title="Events" rightMeta={`${events.length} ceremonies`} />
+        {events.length === 0 ? (
+          <EmptyStateCard
+            title="Plan your ceremonies"
+            subtitle="Nischayathartham, Pellikuthuru, Muhurtham and Reception — each with guests, tasks, payments and vendors."
+          />
+        ) : (
+          <div className="space-y-2">
+            {events.map((event) => (
               <EventSummaryCard
                 key={event.id}
                 event={event}
-                todoCount={data.todos.filter((todo) => todo.eventId === event.id).length}
-                paymentCount={data.expenses.filter((expense) => expense.eventId === event.id).length}
-                vendorCount={data.vendors.filter((vendor) => vendor.eventId === event.id).length}
-                onSelect={() => setSelectedEventId(event.id)}
+                counts={{
+                  todos: data.todos.filter((todo) => todo.eventId === event.id && todo.kind !== 'buy').length,
+                  buy: data.todos.filter((todo) => todo.eventId === event.id && todo.kind === 'buy').length,
+                  payments: data.expenses.filter((expense) => expense.eventId === event.id).length,
+                  vendors: data.vendors.filter((vendor) => vendor.eventId === event.id).length,
+                }}
+                onSelect={() => openEvent(event.id)}
               />
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
       </section>
     )
   }
 
-  const selectedEventTodos = data.todos.filter((todo) => todo.eventId === selectedEvent.id)
-  const selectedEventPayments = data.expenses.filter((expense) => expense.eventId === selectedEvent.id)
-  const selectedEventVendors = data.vendors.filter((vendor) => vendor.eventId === selectedEvent.id)
+  const eventTodos = data.todos.filter((todo) => todo.eventId === selectedEvent.id && todo.kind !== 'buy')
+  const eventBuyItems = data.todos.filter((todo) => todo.eventId === selectedEvent.id && todo.kind === 'buy')
+  const eventPayments = data.expenses.filter((expense) => expense.eventId === selectedEvent.id)
+  const eventVendors = data.vendors.filter((vendor) => vendor.eventId === selectedEvent.id)
+  const search = inviteSearch.trim().toLowerCase()
+  const visibleInvitees = selectedEvent.invitees
+    .map((invitee, index) => ({ invitee, index }))
+    .filter(({ invitee }) => !search || invitee.name.toLowerCase().includes(search))
+    .sort((left, right) => Number(left.invitee.completed) - Number(right.invitee.completed) || left.index - right.index)
+    .map(({ invitee }) => invitee)
+  const confirmedCount = selectedEvent.invitees.filter((invitee) => invitee.completed).length
+  const subtitle = [selectedEvent.date ? formatDate(selectedEvent.date) : 'Date pending', selectedEvent.details]
+    .filter(Boolean)
+    .join(' · ')
 
   return (
-    <section className="screen-animate space-y-5 px-2 pt-4 pb-6">
-      <div className="flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedEventId('')
-            resetComposer()
-          }}
-          className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-taupe hover:text-charcoal"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Events
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            removeGuestEvent(selectedEvent.id)
-            setSelectedEventId('')
-          }}
-          className="text-[11px] font-medium text-blush-deep"
-        >
-          Remove Event
-        </button>
+    <section className="screen-animate space-y-4 pb-4">
+      <DetailHeader
+        backLabel="Events"
+        onBack={closeEvent}
+        title={selectedEvent.name}
+        subtitle={subtitle}
+        action={
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => startEditEvent(selectedEvent)}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-charcoal"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirmRemove) {
+                  setConfirmRemove(true)
+                  return
+                }
+                removeGuestEvent(selectedEvent.id)
+                closeEvent()
+              }}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-blush-deep"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {confirmRemove ? 'Tap to confirm' : 'Remove'}
+            </button>
+          </div>
+        }
+      />
+      {confirmRemove ? (
+        <p className="-mt-2 rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">
+          Removing this event also deletes its linked to-dos, items to buy, payments and vendors.
+        </p>
+      ) : null}
+
+      <div className="no-scrollbar -mx-0.5 flex gap-1.5 overflow-x-auto px-0.5">
+        {composerTabs.map(([kind, label]) => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => openComposer(kind)}
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-brass-line bg-silk px-3 py-1.5 text-xs font-semibold text-charcoal hover:border-champagne/60"
+          >
+            <Plus className="h-3.5 w-3.5 text-champagne" />
+            {label}
+          </button>
+        ))}
       </div>
 
-      <div>
-        <span className="tabular-nums text-[11px] font-medium uppercase tracking-widest text-champagne">
-          {selectedEvent.date ? formatDate(selectedEvent.date) : 'Date pending'}
-        </span>
-        <h1 className="mt-0.5 font-display text-[42px] font-semibold leading-tight text-charcoal">{selectedEvent.name}</h1>
-        {selectedEvent.details ? <p className="mt-1 text-xs text-muted-taupe">{selectedEvent.details}</p> : null}
+      <div className="space-y-2">
+        <SectionTitle
+          title="Notes"
+          action={
+            notesDraft === null ? (
+              <button type="button" onClick={() => setNotesDraft(selectedEvent.notes ?? '')} className="text-xs font-semibold text-blush-deep">
+                {selectedEvent.notes ? 'Edit notes' : '+ Add'}
+              </button>
+            ) : null
+          }
+        />
+        {notesDraft !== null ? (
+          <div className="space-y-2 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
+            <textarea
+              value={notesDraft}
+              onChange={(event) => setNotesDraft(event.target.value)}
+              rows={4}
+              autoFocus
+              placeholder="Muhurtham timing, dress code, return gifts, Purohit instructions…"
+              className="resize-y bg-ivory"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setNotesDraft(null)} className="rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-taupe">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  updateGuestEvent(selectedEvent.id, {
+                    name: selectedEvent.name,
+                    date: selectedEvent.date ?? '',
+                    details: selectedEvent.details ?? '',
+                    notes: notesDraft,
+                  })
+                  setNotesDraft(null)
+                }}
+                className="rounded-xl bg-charcoal px-3 py-1.5 text-xs font-semibold text-ivory"
+              >
+                Save notes
+              </button>
+            </div>
+          </div>
+        ) : selectedEvent.notes ? (
+          <p className="whitespace-pre-wrap rounded-2xl border border-brass-line bg-silk p-3 text-sm leading-relaxed text-charcoal shadow-soft">
+            {selectedEvent.notes}
+          </p>
+        ) : (
+          <p className="px-0.5 text-xs text-muted-taupe">No notes yet.</p>
+        )}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        <button type="button" onClick={() => openComposer('invite')} className="rounded-full bg-charcoal px-3 py-1.5 text-[11px] font-medium text-ivory">
-          + Invitee
-        </button>
-        <button type="button" onClick={() => openComposer('todo')} className="rounded-full border border-brass-line bg-silk px-3 py-1.5 text-[11px] font-medium text-charcoal">
-          + To-Do
-        </button>
-        <button type="button" onClick={() => openComposer('payment')} className="rounded-full border border-brass-line bg-silk px-3 py-1.5 text-[11px] font-medium text-charcoal">
-          + Payment
-        </button>
-        <button type="button" onClick={() => openComposer('vendor')} className="rounded-full border border-brass-line bg-silk px-3 py-1.5 text-[11px] font-medium text-charcoal">
-          + Vendor
-        </button>
-      </div>
-
-      {activeComposer ? (
-        <div className="fixed inset-0 z-[2147483200] flex items-end justify-center bg-charcoal/35 p-3 backdrop-blur-[2px]">
-          <article className="animate-modal-in w-full max-w-xl rounded-[28px] border border-brass-line bg-silk shadow-device">
-            <div className="space-y-4 p-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display text-3xl font-semibold text-charcoal">
-                  {activeComposer === 'invite'
-                    ? 'Add Invitee'
-                    : activeComposer === 'todo'
-                      ? 'Add Linked To-Do'
-                      : activeComposer === 'payment'
-                        ? 'Add Linked Payment'
-                        : 'Add Linked Vendor'}
-                </h3>
-                <button type="button" onClick={resetComposer} className="p-1 text-muted-taupe">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="flex gap-1.5 overflow-x-auto clean-scroll">
-                {([
-                  ['invite', 'Invitee'],
-                  ['todo', 'To-Do'],
-                  ['payment', 'Payment'],
-                  ['vendor', 'Vendor'],
-                ] as const).map(([kind, label]) => (
+      <div className="space-y-2">
+        <SectionTitle title="Invitees" count={selectedEvent.invitees.length} action={<span className="text-xs text-muted-taupe">{confirmedCount} confirmed</span>} />
+        <div className="space-y-2 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
+          {selectedEvent.invitees.length > 0 ? (
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-taupe" />
+              <input
+                value={inviteSearch}
+                onChange={(event) => setInviteSearch(event.target.value)}
+                placeholder="Search invitees"
+                className="bg-ivory py-1.5 pl-8 text-sm"
+              />
+            </div>
+          ) : null}
+          {selectedEvent.invitees.length === 0 ? (
+            <p className="py-1 text-xs text-muted-taupe">No invitees yet. Tap “+ Invitee” above.</p>
+          ) : visibleInvitees.length === 0 ? (
+            <p className="py-1 text-xs text-muted-taupe">No invitee matches “{inviteSearch}”.</p>
+          ) : (
+            <div className="divide-y divide-brass-line/60">
+              {visibleInvitees.map((invitee) => (
+                <div key={invitee.id} className="flex items-center justify-between gap-2 py-1.5">
                   <button
-                    key={kind}
                     type="button"
-                    onClick={() => {
-                      setActiveComposer(kind)
-                      setComposerError('')
-                    }}
-                    className={`whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-medium ${activeComposer === kind ? 'bg-charcoal text-ivory' : 'border border-brass-line bg-silk text-charcoal'}`}
+                    onClick={() => toggleEventInvitee(selectedEvent.id, invitee.id)}
+                    className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
                   >
-                    {label}
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border ${
+                        invitee.completed ? 'border-sage bg-sage text-white' : 'border-champagne/60'
+                      }`}
+                    >
+                      {invitee.completed ? <Check className="h-3 w-3 stroke-[2.5]" /> : null}
+                    </span>
+                    <span className={`truncate text-sm ${invitee.completed ? 'text-muted-taupe line-through' : 'text-charcoal'}`}>
+                      {invitee.name}
+                    </span>
                   </button>
-                ))}
-              </div>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-[11px] font-medium text-muted-taupe">
-                    {activeComposer === 'invite' ? 'Guest / Family Name *' : activeComposer === 'todo' ? 'To-Do Title *' : activeComposer === 'payment' ? 'Payment Title *' : 'Vendor Name *'}
-                  </label>
-                  <input
-                    value={activeComposer === 'invite' ? inviteeInput : activeComposer === 'todo' ? todoTitle : activeComposer === 'payment' ? paymentTitle : vendorName}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      if (activeComposer === 'invite') setInviteeInput(value)
-                      if (activeComposer === 'todo') setTodoTitle(value)
-                      if (activeComposer === 'payment') setPaymentTitle(value)
-                      if (activeComposer === 'vendor') setVendorName(value)
-                    }}
-                    onKeyDown={activeComposer === 'invite' ? handleInviteInputKeyDown : undefined}
-                    placeholder={activeComposer === 'invite' ? 'Enter invitee name...' : ''}
-                    className="bg-ivory"
-                  />
+                  <button
+                    type="button"
+                    onClick={() => removeEventInvitee(selectedEvent.id, invitee.id)}
+                    className="p-1 text-muted-taupe hover:text-blush-deep"
+                    aria-label={`Remove ${invitee.name}`}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
                 </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
 
-                {activeComposer === 'todo' ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Due Date</label>
-                      <input type="date" value={todoDueDate} onChange={(event) => setTodoDueDate(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Priority</label>
-                      <select value={todoPriority} onChange={(event) => setTodoPriority(event.target.value as TodoPriority)} className="bg-ivory text-xs">
-                        <option value="High">High</option>
-                        <option value="Medium">Medium</option>
-                        <option value="Low">Low</option>
-                      </select>
-                    </div>
-                  </div>
-                ) : null}
+      <div className="space-y-2">
+        <SectionTitle title="Items to buy" count={eventBuyItems.length} />
+        <form
+          onSubmit={(formEvent) => {
+            formEvent.preventDefault()
+            if (!buyDraft.trim()) return
+            addTodo({ title: buyDraft, dueDate: todayString(), priority: 'Medium', kind: 'buy' }, selectedEvent.id)
+            setBuyDraft('')
+          }}
+          className="flex items-center gap-2"
+        >
+          <input
+            value={buyDraft}
+            onChange={(event) => setBuyDraft(event.target.value)}
+            placeholder="e.g. Talambralu pearls, pattu saree"
+            className="flex-1 py-2 text-sm"
+          />
+          <button type="submit" className="rounded-xl bg-charcoal px-3 py-2 text-xs font-semibold text-ivory">
+            Add
+          </button>
+        </form>
+        {eventBuyItems.map((todo) => (
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+        ))}
+      </div>
 
-                {activeComposer === 'payment' ? (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Total Amount (₹)</label>
-                      <input type="number" min={1} value={paymentTotal} onChange={(event) => setPaymentTotal(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Category</label>
-                      <select value={paymentCategory} onChange={(event) => setPaymentCategory(event.target.value as ExpenseCategory)} className="bg-ivory text-xs">
-                        {expenseCategories.map((category) => (
-                          <option key={category} value={category}>
-                            {category}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Paid Amount (₹)</label>
-                      <input type="number" min={0} value={paymentPaid} onChange={(event) => setPaymentPaid(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Due Date</label>
-                      <input type="date" value={paymentDueDate} onChange={(event) => setPaymentDueDate(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                    </div>
-                  </div>
-                ) : null}
+      <div className="space-y-2">
+        <SectionTitle title="To-Dos" count={eventTodos.length} />
+        {eventTodos.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
+        {eventTodos.map((todo) => (
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+        ))}
+      </div>
 
-                {activeComposer === 'vendor' ? (
-                  <div className="space-y-3">
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Phone (Optional)</label>
-                      <input value={vendorPhone} onChange={(event) => setVendorPhone(event.target.value)} className="bg-ivory" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Contract Amount (₹)</label>
-                        <input type="number" min={0} value={vendorTotalContract} onChange={(event) => setVendorTotalContract(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Paid Amount (₹)</label>
-                        <input type="number" min={0} value={vendorPaidAmount} onChange={(event) => setVendorPaidAmount(event.target.value)} className="bg-ivory text-xs tabular-nums" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="mb-1 block text-[11px] font-medium text-muted-taupe">Notes</label>
-                      <input value={vendorNotes} onChange={(event) => setVendorNotes(event.target.value)} className="bg-ivory" />
-                    </div>
-                  </div>
-                ) : null}
+      <div className="space-y-2">
+        <SectionTitle title="Payments" count={eventPayments.length} />
+        {eventPayments.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
+        {eventPayments.map((expense) => (
+          <PaymentCard
+            key={expense.id}
+            title={expense.title}
+            subtitle={`${expense.category} · ${formatDate(expense.dueDate)}`}
+            totalAmount={expense.totalAmount}
+            paidAmount={expense.paidAmount}
+            onOpen={() => onOpenItem?.('payments', expense.id)}
+            onMarkPaid={() => markExpensePaid(expense.id)}
+          />
+        ))}
+      </div>
 
-                {activeComposer === 'invite' && inviteeChips.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {inviteeChips.map((member) => (
-                      <span
-                        key={member}
-                        className="inline-flex items-center gap-1 rounded-full border border-brass-line bg-ivory px-2.5 py-1 text-xs text-charcoal"
-                      >
-                        {member}
+      <div className="space-y-2">
+        <SectionTitle title="Vendors" count={eventVendors.length} />
+        {eventVendors.length === 0 ? <p className="px-0.5 text-xs text-muted-taupe">None linked.</p> : null}
+        {eventVendors.map((vendor) => (
+          <VendorCard
+            key={vendor.id}
+            vendor={vendor}
+            onOpen={() => onOpenItem?.('vendors', vendor.id)}
+            onMarkPaid={() => markVendorPaid(vendor.id)}
+          />
+        ))}
+      </div>
+
+      {composerKind ? (
+        <SheetModal title={`Add to ${selectedEvent.name}`} onClose={closeComposer}>
+          <form onSubmit={submitComposer} className="space-y-3">
+            <div className="no-scrollbar flex gap-1.5 overflow-x-auto">
+              {composerTabs.map(([kind, label]) => (
+                <button
+                  key={kind}
+                  type="button"
+                  onClick={() => {
+                    setComposerKind(kind)
+                    setComposerError('')
+                  }}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold ${
+                    composerKind === kind ? 'bg-charcoal text-ivory' : 'border border-brass-line bg-silk text-charcoal'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {composerKind === 'invite' ? (
+              <div className="space-y-2">
+                <FieldLabel>Guest / family name *</FieldLabel>
+                <input
+                  value={composer.inviteeInput}
+                  onChange={(event) => setComposer({ ...composer, inviteeInput: event.target.value })}
+                  onKeyDown={handleInviteKeyDown}
+                  placeholder="Type a name and press Enter"
+                  autoFocus
+                />
+                {composer.invitees.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {composer.invitees.map((name) => (
+                      <span key={name} className="inline-flex items-center gap-1 rounded-full border border-brass-line bg-ivory px-2.5 py-1 text-xs text-charcoal">
+                        {name}
                         <button
                           type="button"
-                          onClick={() => setInviteeChips((current) => current.filter((name) => name !== member))}
+                          onClick={() => setComposer({ ...composer, invitees: composer.invitees.filter((entry) => entry !== name) })}
                           className="text-muted-taupe"
+                          aria-label={`Remove ${name}`}
                         >
                           <X className="h-3 w-3" />
                         </button>
@@ -492,112 +582,139 @@ export function InviteChecklistScreen() {
                     ))}
                   </div>
                 ) : null}
-
-                {composerError ? <p className="text-xs text-blush-deep">{composerError}</p> : null}
               </div>
-
-              <div className="flex items-center gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={resetComposer}
-                  className="flex-1 rounded-xl border border-brass-line py-2.5 text-xs font-medium text-muted-taupe"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={submitComposer}
-                  className="flex-1 rounded-xl bg-charcoal py-2.5 text-xs font-medium text-ivory"
-                >
-                  Add
-                </button>
+            ) : (
+              <div>
+                <FieldLabel>
+                  {composerKind === 'vendor' ? 'Vendor name *' : composerKind === 'payment' ? 'Payment title *' : composerKind === 'buy' ? 'Item *' : 'Title *'}
+                </FieldLabel>
+                <input value={composer.title} onChange={(event) => setComposer({ ...composer, title: event.target.value })} autoFocus />
               </div>
-            </div>
-          </article>
-        </div>
+            )}
+
+            {composerKind === 'todo' || composerKind === 'buy' ? (
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <FieldLabel>Due date</FieldLabel>
+                  <input type="date" value={composer.dueDate} onChange={(event) => setComposer({ ...composer, dueDate: event.target.value })} />
+                </div>
+                <div>
+                  <FieldLabel>Priority</FieldLabel>
+                  <select value={composer.priority} onChange={(event) => setComposer({ ...composer, priority: event.target.value as TodoPriority })}>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                  </select>
+                </div>
+              </div>
+            ) : null}
+
+            {composerKind === 'payment' ? (
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <FieldLabel>Total (₹) *</FieldLabel>
+                  <input type="number" inputMode="numeric" min={1} value={composer.total} onChange={(event) => setComposer({ ...composer, total: event.target.value })} />
+                </div>
+                <div>
+                  <FieldLabel>Paid (₹)</FieldLabel>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={0}
+                    value={composer.paid}
+                    onChange={(event) => setComposer({ ...composer, paid: event.target.value })}
+                    placeholder="Blank = fully paid"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Category</FieldLabel>
+                  <select value={composer.category} onChange={(event) => setComposer({ ...composer, category: event.target.value as ExpenseCategory })}>
+                    {EXPENSE_CATEGORIES.map((category) => (
+                      <option key={category} value={category}>
+                        {category}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>Due date</FieldLabel>
+                  <input type="date" value={composer.dueDate} onChange={(event) => setComposer({ ...composer, dueDate: event.target.value })} />
+                </div>
+              </div>
+            ) : null}
+
+            {composerKind === 'vendor' ? (
+              <div className="space-y-2.5">
+                <div>
+                  <FieldLabel>Phone</FieldLabel>
+                  <input
+                    type="tel"
+                    inputMode="tel"
+                    value={composer.phone}
+                    onChange={(event) => setComposer({ ...composer, phone: sanitizePhone(event.target.value) })}
+                    placeholder="9849000000"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <FieldLabel>Contract (₹)</FieldLabel>
+                    <input type="number" inputMode="numeric" min={0} value={composer.total} onChange={(event) => setComposer({ ...composer, total: event.target.value })} />
+                  </div>
+                  <div>
+                    <FieldLabel>Paid (₹)</FieldLabel>
+                    <input type="number" inputMode="numeric" min={0} value={composer.paid} onChange={(event) => setComposer({ ...composer, paid: event.target.value })} />
+                  </div>
+                </div>
+                <div>
+                  <FieldLabel>Notes</FieldLabel>
+                  <input value={composer.notes} onChange={(event) => setComposer({ ...composer, notes: event.target.value })} />
+                </div>
+              </div>
+            ) : null}
+
+            {composerError ? <p className="rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">{composerError}</p> : null}
+            <button type="submit" className="w-full rounded-2xl bg-charcoal py-3 text-sm font-semibold text-ivory">
+              Add
+            </button>
+          </form>
+        </SheetModal>
       ) : null}
 
-      <div className="space-y-3 rounded-2xl border border-brass-line bg-silk p-4 shadow-soft">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-semibold text-charcoal">Invitees ({selectedEvent.invitees.length})</h3>
-          <span className="tabular-nums text-[11px] text-muted-taupe">
-            {selectedEvent.invitees.filter((invitee) => invitee.completed).length} confirmed
-          </span>
-        </div>
-        {selectedEvent.invitees.length === 0 ? (
-          <p className="py-2 text-xs text-muted-taupe">No invitees added yet.</p>
-        ) : (
-          <div className="divide-y divide-brass-line/60">
-            {selectedEvent.invitees.map((invitee) => (
-              <div key={invitee.id} className="flex items-center justify-between gap-2 py-2">
-                <button
-                  type="button"
-                  onClick={() => toggleEventInvitee(selectedEvent.id, invitee.id)}
-                  className="flex min-w-0 items-center gap-2.5 text-left"
-                >
-                  <span
-                    className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${
-                      invitee.completed ? 'border-sage bg-sage text-white' : 'border-champagne/60'
-                    }`}
-                  >
-                    {invitee.completed ? <Check className="h-2.5 w-2.5 stroke-[2.5]" /> : null}
-                  </span>
-                  <span className={`truncate text-xs ${invitee.completed ? 'text-muted-taupe line-through' : 'text-charcoal'}`}>
-                    {invitee.name}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => removeEventInvitee(selectedEvent.id, invitee.id)}
-                  className="p-1 text-muted-taupe hover:text-blush-deep"
-                  aria-label={`Remove ${invitee.name}`}
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="space-y-2.5">
-        <div className="rounded-2xl border border-brass-line bg-silk p-3.5 shadow-soft">
-          <p className="mb-1.5 text-[11px] font-semibold text-charcoal">Linked To-Dos ({selectedEventTodos.length})</p>
-          {selectedEventTodos.length === 0 ? (
-            <p className="text-[11px] text-muted-taupe">None linked</p>
-          ) : (
-            selectedEventTodos.map((todo) => (
-              <p key={todo.id} className="truncate text-xs text-muted-taupe">
-                · {todo.title}
-              </p>
-            ))
-          )}
-        </div>
-        <div className="rounded-2xl border border-brass-line bg-silk p-3.5 shadow-soft">
-          <p className="mb-1.5 text-[11px] font-semibold text-charcoal">Linked Payments ({selectedEventPayments.length})</p>
-          {selectedEventPayments.length === 0 ? (
-            <p className="text-[11px] text-muted-taupe">None linked</p>
-          ) : (
-            selectedEventPayments.map((expense) => (
-              <p key={expense.id} className="truncate text-xs text-muted-taupe tabular-nums">
-                · {expense.title} ({formatCurrencyInr(expense.paidAmount)}/{formatCurrencyInr(expense.totalAmount)})
-              </p>
-            ))
-          )}
-        </div>
-        <div className="rounded-2xl border border-brass-line bg-silk p-3.5 shadow-soft">
-          <p className="mb-1.5 text-[11px] font-semibold text-charcoal">Linked Vendors ({selectedEventVendors.length})</p>
-          {selectedEventVendors.length === 0 ? (
-            <p className="text-[11px] text-muted-taupe">None linked</p>
-          ) : (
-            selectedEventVendors.map((vendor) => (
-              <p key={vendor.id} className="truncate text-xs text-muted-taupe">
-                · {vendor.name}
-              </p>
-            ))
-          )}
-        </div>
-      </div>
+      {isEditingEvent ? (
+        <SheetModal title="Edit event" onClose={() => setEditingEvent(false)}>
+          <form onSubmit={saveEvent} className="space-y-3">
+            <div>
+              <FieldLabel>Name *</FieldLabel>
+              <input value={eventForm.name} onChange={(event) => setEventForm({ ...eventForm, name: event.target.value })} />
+            </div>
+            <div>
+              <FieldLabel>Date</FieldLabel>
+              <input type="date" value={eventForm.date} onChange={(event) => setEventForm({ ...eventForm, date: event.target.value })} />
+            </div>
+            <div>
+              <FieldLabel>Details</FieldLabel>
+              <input
+                value={eventForm.details}
+                onChange={(event) => setEventForm({ ...eventForm, details: event.target.value })}
+                placeholder="Venue, timing…"
+              />
+            </div>
+            <div>
+              <FieldLabel>Notes</FieldLabel>
+              <textarea
+                value={eventForm.notes}
+                onChange={(event) => setEventForm({ ...eventForm, notes: event.target.value })}
+                rows={4}
+                className="resize-y"
+              />
+            </div>
+            {eventFormError ? <p className="rounded-xl bg-blush-soft px-3 py-2 text-xs text-blush-deep">{eventFormError}</p> : null}
+            <button type="submit" className="w-full rounded-2xl bg-charcoal py-3 text-sm font-semibold text-ivory">
+              Save event
+            </button>
+          </form>
+        </SheetModal>
+      ) : null}
     </section>
   )
 }

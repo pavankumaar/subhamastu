@@ -26,10 +26,11 @@ const config: Config = {
         'brass-line': '#EAE2D3',
       },
       fontFamily: {
-        display: ['Cormorant Garamond', 'Georgia', 'serif'],
-        body: ['Plus Jakarta Sans', 'sans-serif'],
+        display: ['Inter', 'system-ui', 'sans-serif'],
+        body: ['Inter', 'system-ui', 'sans-serif'],
       },
       boxShadow: {
+        soft: '0 1px 2px rgba(31, 28, 25, 0.04)',
         'card-warm': '0 4px 16px -2px rgba(36, 30, 28, 0.06), 0 1px 3px rgba(198, 146, 20, 0.08)',
         float: '0 10px 25px -5px rgba(166, 38, 38, 0.22)',
         device: '0 24px 60px -12px rgba(31, 28, 25, 0.12), 0 0 0 1px #EAE2D3',

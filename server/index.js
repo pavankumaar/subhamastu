@@ -2,7 +2,7 @@ import cors from 'cors'
 import express from 'express'
 import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
-import { applyAssistantActions, buildPlannerSnapshot, describeTools } from './assistantTools.js'
+import { applyAssistantActions, buildPlannerSnapshot, describeTools, resolveCards } from './assistantTools.js'
 import { AuthError, createAuth, createRateLimiter } from './auth.js'
 
 const app = express()
@@ -266,10 +266,13 @@ app.post('/api/assistant/reply', async (request, response) => {
       actionResult.failedActions.length > 0
         ? `${envelope.reply}\n\n⚠ Couldn't complete: ${actionResult.failedActions.map((entry) => entry.reason).join(' ')}`
         : envelope.reply
+    const finalState = actionResult.appliedActions.length > 0 ? actionResult.state : currentState
+    const cards = resolveCards(envelope.cards, finalState)
 
     await appendAssistantTurn(sessionId, {
       userText: query,
       assistantText: reply,
+      cards,
       appliedActions: actionResult.appliedActions,
       source: provider === 'openrouter' ? 'openrouter' : 'gemini-cloud',
     })
@@ -277,8 +280,9 @@ app.post('/api/assistant/reply', async (request, response) => {
     response.json({
       sessionId,
       reply,
+      cards,
       source: provider === 'openrouter' ? 'openrouter' : 'gemini-cloud',
-      state: actionResult.appliedActions.length > 0 ? actionResult.state : currentState,
+      state: finalState,
       actionsApplied: actionResult.appliedActions.length,
       actionsFailed: actionResult.failedActions.length,
     })
@@ -441,6 +445,7 @@ function sanitizePlannerState(state) {
             typeof event.details === 'string' && event.details.trim()
               ? event.details.trim()
               : '',
+          notes: typeof event.notes === 'string' ? event.notes.slice(0, 5000) : '',
           invitees,
         }
       })
@@ -559,10 +564,19 @@ function buildAssistantConversation({ query, plannerState, history, contextWindo
     `Today is ${weekday}, ${today}. Resolve relative dates (tomorrow, next Friday, in 2 weeks) against it.`,
     '',
     'OUTPUT FORMAT',
-    'Return valid JSON only, no markdown: {"reply":"text for the user","actions":[{"type":"<tool>","payload":{...}}]}',
+    'Return valid JSON only, no markdown: {"reply":"text for the user","actions":[{"type":"<tool>","payload":{...}}],"cards":[{"type":"vendor|payment|task|event","ref":"id or exact name"}]}',
     'You get ONE response per user message, so put EVERY action needed in the actions array at once.',
     'Actions run in order. A later action may reference an item created earlier in the same list by its name',
     '(e.g. addEvent "Sangeet" then addTodo with "event":"Sangeet").',
+    '',
+    'INTERACTIVE CARDS',
+    '- The app renders each entry in "cards" as an interactive card: vendor = contact card with Call and Copy buttons,',
+    '  payment = payment card with Mark paid, task = checklist card with a done toggle, event = event card that opens it.',
+    '- Add cards whenever the user wants to see, contact, call, pay, review or act on specific items',
+    '  (e.g. "give me the florist contact" -> a vendor card; "what is pending to pay" -> payment cards).',
+    '- Also add a card for an item you just created or changed, so the user can act on it. Use its name as ref if new.',
+    '- When cards are shown, keep the reply text short and do not repeat every detail the card already shows.',
+    '- Use "cards": [] when nothing specific needs to be shown. At most 8 cards.',
     '',
     'TOOLS (payload fields marked ? are optional)',
     describeTools(),
@@ -579,11 +593,15 @@ function buildAssistantConversation({ query, plannerState, history, contextWindo
     '- Resolve "it", "that payment", "the same vendor", "them" from earlier messages and planner data.',
     '',
     'DEFAULTS (prefer acting over asking)',
-    `- Missing dates default to ${today}. Missing task priority defaults to Medium. Missing paid amount defaults to 0.`,
-    '- Infer payment category from the title. Required fields: task title; payment title + totalAmount; vendor name; event name.',
+    `- Missing dates default to ${today}. Missing task priority defaults to Medium.`,
+    '- Payments: if the user does not mention what was paid, record it as FULLY PAID (omit paidAmount).',
+    '  Use paidAmount 0 only when they say it is due, pending, unpaid or a reminder; use the advance amount for partial payments.',
+    '- Infer payment category from the title (Venue, Catering, Attire, Photography, Decor, otherwise Others).',
+    '- Things to buy / shopping items are addTodo with kind "buy" (they appear under the event\'s Items to buy and in To-Do).',
+    '- Required fields: task title; payment title + totalAmount; vendor name; event name.',
     '- Ask a clarifying question ONLY when a required field is truly missing; ask for all missing fields in one question.',
     '- Destructive actions (removeEvent, removeExpense, removeVendor, removeTodo) only when the user clearly asks.',
-    '  removeEvent also deletes that event\'s linked tasks, payments and vendors â€” mention this in the reply.',
+    '  removeEvent also deletes that event\'s linked tasks, payments and vendors - mention this in the reply.',
     '',
     'REPLY STYLE',
     '- Concise, warm, concrete. When you perform actions, state exactly what was done.',
@@ -630,8 +648,9 @@ function parseAssistantEnvelope(rawReply) {
   const actions = Array.isArray(parsed.actions)
     ? parsed.actions.filter((entry) => isRecord(entry) && normalizeText(entry.type))
     : []
+  const cards = Array.isArray(parsed.cards) ? parsed.cards.filter((entry) => isRecord(entry)) : []
 
-  return { reply, actions }
+  return { reply, actions, cards }
 }
 
 function stripMarkdownCodeFence(text) {
@@ -748,6 +767,7 @@ async function appendAssistantTurn(sessionId, turn) {
     id: `msg-${randomUUID()}`,
     role: 'assistant',
     text: turn.assistantText,
+    cards: Array.isArray(turn.cards) ? turn.cards : [],
     source: turn.source === 'openrouter' ? 'openrouter' : 'gemini-cloud',
     createdAt: now,
   }

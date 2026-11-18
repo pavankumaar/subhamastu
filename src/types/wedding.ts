@@ -4,6 +4,16 @@ export type ExpenseCategory =
   | 'Attire'
   | 'Photography'
   | 'Decor'
+  | 'Others'
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'Venue',
+  'Catering',
+  'Attire',
+  'Photography',
+  'Decor',
+  'Others',
+]
 
 export type ExpenseStatus = 'Paid' | 'Deposit Paid' | 'Due Soon'
 export type TodoPriority = 'High' | 'Medium' | 'Low'
@@ -31,10 +41,13 @@ export interface ExpenseItem {
   status: ExpenseStatus
 }
 
+export type TodoKind = 'task' | 'buy'
+
 export interface TodoItem {
   id: string
   title: string
   eventId?: string
+  kind?: TodoKind
   milestone: TodoMilestone
   dueDate?: string
   completed: boolean
@@ -70,6 +83,7 @@ export interface GuestEventItem {
   name: string
   date?: string
   details?: string
+  notes?: string
   invitees: InviteeChecklistItem[]
 }
 
@@ -113,6 +127,37 @@ export interface AddTodoInput {
   title: string
   dueDate?: string
   priority: TodoPriority
+  kind?: TodoKind
+}
+
+export interface UpdateTodoInput extends AddTodoInput {
+  completed: boolean
+  eventId?: string
+}
+
+export interface UpdateExpenseInput {
+  title: string
+  category: ExpenseCategory
+  totalAmount: number
+  paidAmount: number
+  dueDate: string
+  eventId?: string
+}
+
+export interface UpdateVendorInput {
+  name: string
+  phone: string
+  totalContract: number
+  paidAmount: number
+  notes: string
+  eventId?: string
+}
+
+export interface UpdateEventInput {
+  name: string
+  date: string
+  details: string
+  notes: string
 }
 
 export interface AddVendorInput {

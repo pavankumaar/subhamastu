@@ -15,8 +15,13 @@ import type {
   TodoPriority,
   VendorItem,
   TodoItem,
+  UpdateEventInput,
+  UpdateExpenseInput,
+  UpdateTodoInput,
+  UpdateVendorInput,
   WeddingPlannerData,
 } from '../types/wedding'
+import { expenseStatusFor, sanitizePhone } from '../utils/weddingFormat'
 
 const plannerStateEndpoint = '/api/planner/state'
 const saveDebounceMs = 350
@@ -166,6 +171,7 @@ function normalizeEventsFromUnknown(value: unknown) {
         typeof eventRecord.details === 'string' && eventRecord.details.trim()
           ? eventRecord.details.trim()
           : '',
+      notes: typeof eventRecord.notes === 'string' ? eventRecord.notes : '',
       invitees: normalizeInviteesFromUnknown(eventRecord.invitees),
     })
   }
@@ -223,6 +229,9 @@ function sanitizePlannerState(candidate: unknown) {
           milestone: 'General',
           completed: Boolean(todoRecord.completed),
           priority: normalizeTodoPriority(todoRecord.priority),
+        }
+        if (todoRecord.kind === 'buy') {
+          normalizedTodo.kind = 'buy'
         }
         if (typeof todoRecord.dueDate === 'string' && todoRecord.dueDate.trim()) {
           normalizedTodo.dueDate = todoRecord.dueDate.trim()
@@ -636,6 +645,9 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
         completed: false,
         priority: input.priority,
       }
+      if (input.kind === 'buy') {
+        todo.kind = 'buy'
+      }
       return { ...current, todos: [todo, ...current.todos] }
     })
   }
@@ -757,27 +769,147 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
     }))
   }
 
-  function updateTodo(id: string, input: AddTodoInput & { completed: boolean }) {
+  function updateTodo(id: string, input: UpdateTodoInput) {
     const normalizedTitle = input.title.trim()
     const normalizedDueDate = input.dueDate?.trim() || ''
     if (!normalizedTitle || !normalizedDueDate) {
       return
     }
 
+    setData((current) => {
+      const eventId =
+        input.eventId && current.guests.events.some((event) => event.id === input.eventId)
+          ? input.eventId
+          : undefined
+      return {
+        ...current,
+        todos: current.todos.map((todo) => {
+          if (todo.id !== id) {
+            return todo
+          }
+          const next: TodoItem = {
+            ...todo,
+            title: normalizedTitle,
+            dueDate: normalizedDueDate,
+            priority: input.priority,
+            completed: input.completed,
+            eventId,
+          }
+          if (input.kind === 'buy') next.kind = 'buy'
+          else delete next.kind
+          return next
+        }),
+      }
+    })
+  }
+
+  function updateExpense(id: string, input: UpdateExpenseInput) {
+    const title = input.title.trim()
+    const totalAmount = Math.max(1, Math.round(input.totalAmount))
+    const paidAmount = Math.max(0, Math.min(Math.round(input.paidAmount), totalAmount))
+    if (!title) {
+      return
+    }
+
+    setData((current) => {
+      const eventId =
+        input.eventId && current.guests.events.some((event) => event.id === input.eventId)
+          ? input.eventId
+          : undefined
+      return {
+        ...current,
+        expenses: current.expenses.map((expense) =>
+          expense.id === id
+            ? {
+                ...expense,
+                title,
+                category: input.category,
+                totalAmount,
+                paidAmount,
+                dueDate: input.dueDate,
+                status: expenseStatusFor(totalAmount, paidAmount),
+                eventId,
+              }
+            : expense,
+        ),
+      }
+    })
+  }
+
+  function removeExpense(id: string) {
     setData((current) => ({
       ...current,
-      todos: current.todos.map((todo) =>
-        todo.id === id
-          ? {
-              ...todo,
-              title: normalizedTitle,
-              dueDate: normalizedDueDate,
-              priority: input.priority,
-              completed: input.completed,
-            }
-          : todo,
+      expenses: current.expenses.filter((expense) => expense.id !== id),
+    }))
+  }
+
+  function updateVendor(id: string, input: UpdateVendorInput) {
+    const name = input.name.trim()
+    if (!name) {
+      return
+    }
+    const totalContract = Math.max(0, Math.round(input.totalContract))
+    const paidAmount = Math.max(0, Math.min(Math.round(input.paidAmount), totalContract))
+
+    setData((current) => {
+      const eventId =
+        input.eventId && current.guests.events.some((event) => event.id === input.eventId)
+          ? input.eventId
+          : undefined
+      return {
+        ...current,
+        vendors: current.vendors.map((vendor) =>
+          vendor.id === id
+            ? {
+                ...vendor,
+                name,
+                phone: sanitizePhone(input.phone),
+                totalContract,
+                paidAmount,
+                notes: input.notes.trim(),
+                eventId,
+              }
+            : vendor,
+        ),
+      }
+    })
+  }
+
+  function markVendorPaid(id: string) {
+    setData((current) => ({
+      ...current,
+      vendors: current.vendors.map((vendor) =>
+        vendor.id === id ? { ...vendor, paidAmount: vendor.totalContract } : vendor,
       ),
     }))
+  }
+
+  function removeVendor(id: string) {
+    setData((current) => ({
+      ...current,
+      vendors: current.vendors.filter((vendor) => vendor.id !== id),
+    }))
+  }
+
+  function updateGuestEvent(id: string, input: UpdateEventInput) {
+    const name = normalizeInviteeName(input.name)
+    if (!name) {
+      return
+    }
+    setData((current) => {
+      const events = current.guests.events.map((event) =>
+        event.id === id
+          ? {
+              ...event,
+              name,
+              date: input.date || event.date,
+              details: input.details.trim(),
+              notes: input.notes,
+            }
+          : event,
+      )
+      return { ...current, guests: updateGuestsWithEvents(current.guests, events) }
+    })
   }
 
   function removeTodo(id: string) {
@@ -851,7 +983,7 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
             ? eventId
             : undefined,
         role: input.role.trim(),
-        phone: input.phone.trim(),
+        phone: sanitizePhone(input.phone),
         email: input.email.trim(),
         totalContract: Math.max(0, input.totalContract),
         paidAmount,
@@ -863,7 +995,7 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
   }
 
   function updateVendorPhone(id: string, phone: string) {
-    const normalizedPhone = phone.trim()
+    const normalizedPhone = sanitizePhone(phone)
     if (!normalizedPhone) {
       return
     }
@@ -901,6 +1033,12 @@ export function WeddingProvider({ children }: { children: ReactNode }) {
     removeTodo,
     addVendor,
     updateVendorPhone,
+    updateExpense,
+    removeExpense,
+    updateVendor,
+    markVendorPaid,
+    removeVendor,
+    updateGuestEvent,
   }
 
   return <WeddingContext.Provider value={value}>{children}</WeddingContext.Provider>

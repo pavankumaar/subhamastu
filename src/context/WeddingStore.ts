@@ -7,6 +7,10 @@ import type {
   BudgetMetrics,
   ExpenseItem,
   TodoItem,
+  UpdateEventInput,
+  UpdateExpenseInput,
+  UpdateTodoInput,
+  UpdateVendorInput,
   WeddingPlannerData,
 } from '../types/wedding'
 
@@ -31,10 +35,16 @@ export interface WeddingContextValue {
   removeEventInvitee: (eventId: string, inviteeId: string) => void
   removeGuestEvent: (eventId: string) => void
   toggleTodo: (id: string) => void
-  updateTodo: (id: string, input: AddTodoInput & { completed: boolean }) => void
+  updateTodo: (id: string, input: UpdateTodoInput) => void
   removeTodo: (id: string) => void
   addVendor: (input: AddVendorInput, eventId?: string) => void
   updateVendorPhone: (id: string, phone: string) => void
+  updateExpense: (id: string, input: UpdateExpenseInput) => void
+  removeExpense: (id: string) => void
+  updateVendor: (id: string, input: UpdateVendorInput) => void
+  markVendorPaid: (id: string) => void
+  removeVendor: (id: string) => void
+  updateGuestEvent: (id: string, input: UpdateEventInput) => void
 }
 
 export const WeddingContext = createContext<WeddingContextValue | undefined>(

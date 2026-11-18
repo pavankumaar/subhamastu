@@ -77,13 +77,13 @@ export function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => vo
           <span className="flex h-8 w-8 items-center justify-center rounded-full border border-brass-line bg-champagne-light">
             <DiyaIcon className="h-[18px] w-[18px] text-champagne" />
           </span>
-          <span className="font-display text-xl font-semibold leading-none tracking-tight text-charcoal">Subhamastu</span>
-          <span className="border-l border-brass-line pl-2 text-[11px] leading-none text-muted-taupe">Telugu Wedding Atelier</span>
+          <span className="text-lg font-extrabold leading-none tracking-tight text-charcoal">Subhamastu</span>
+          <span className="border-l border-brass-line pl-2 text-[11px] font-medium leading-none text-muted-taupe">Wedding Planner</span>
         </header>
 
         <section className="screen-animate flex flex-1 flex-col justify-center py-8">
           <p className="text-[11px] font-medium uppercase tracking-widest text-champagne">Namaskaram</p>
-          <h1 className="mt-1 font-display text-[40px] font-semibold leading-none tracking-tight text-charcoal">
+          <h1 className="mt-1 text-[32px] font-extrabold leading-tight tracking-tight text-charcoal">
             {isRegister ? 'Begin your planner' : 'Welcome back'}
           </h1>
           <p className="mt-2 text-xs leading-relaxed text-muted-taupe">

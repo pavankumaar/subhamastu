@@ -5,12 +5,21 @@ export interface AssistantContext {
   sessionId: string
 }
 
+export type AssistantCardType = 'vendor' | 'payment' | 'task' | 'event'
+
+// Interactive items the agent attached to a reply (rendered as cards with actions in the chat).
+export interface AssistantCard {
+  type: AssistantCardType
+  id: string
+}
+
 export interface AssistantResult {
   reply: string
   source: 'gemini-cloud' | 'openrouter'
   state: WeddingPlannerData | null
   sessionId: string
   failed: boolean
+  cards: AssistantCard[]
 }
 
 interface AssistantApiPayload {
@@ -19,6 +28,7 @@ interface AssistantApiPayload {
   state?: unknown
   sessionId?: string
   error?: string
+  cards?: unknown
 }
 
 const assistantApiEndpoint = '/api/assistant/reply'
@@ -32,6 +42,21 @@ export interface AssistantHistoryMessage {
   text: string
   source?: 'gemini-cloud' | 'openrouter'
   createdAt: string
+  cards: AssistantCard[]
+}
+
+const cardTypes = new Set<AssistantCardType>(['vendor', 'payment', 'task', 'event'])
+
+function normalizeCards(value: unknown): AssistantCard[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+  return value
+    .filter((entry): entry is { type: AssistantCardType; id: string } =>
+      isRecord(entry) && cardTypes.has(entry.type as AssistantCardType) && typeof entry.id === 'string',
+    )
+    .map((entry) => ({ type: entry.type, id: entry.id }))
+    .slice(0, 8)
 }
 
 function normalizeText(value: unknown, fallback = '') {
@@ -127,6 +152,7 @@ function sanitizePlannerState(candidate: unknown): WeddingPlannerData | null {
         name: eventName,
         date: normalizeText(eventEntry.date),
         details: normalizeText(eventEntry.details),
+        notes: typeof eventEntry.notes === 'string' ? eventEntry.notes : '',
         invitees,
       })
     }
@@ -273,6 +299,7 @@ export async function fetchAssistantHistory(sessionId: string): Promise<Assistan
         typeof entry.createdAt === 'string' && entry.createdAt
           ? entry.createdAt
           : new Date().toISOString(),
+      cards: normalizeCards((entry as unknown as Record<string, unknown>).cards),
     }))
 }
 
@@ -290,6 +317,7 @@ export async function executeAssistantQuery(
       state: null,
       sessionId,
       failed: true,
+      cards: [],
     }
   }
 
@@ -300,6 +328,7 @@ export async function executeAssistantQuery(
       state: null,
       sessionId: '',
       failed: true,
+      cards: [],
     }
   }
 
@@ -318,6 +347,7 @@ export async function executeAssistantQuery(
         state: null,
         sessionId,
         failed: true,
+        cards: [],
       }
     }
 
@@ -328,6 +358,7 @@ export async function executeAssistantQuery(
       state,
       sessionId: normalizeText(payload.sessionId, sessionId),
       failed: false,
+      cards: normalizeCards(payload.cards),
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown AI request failure.'
@@ -337,6 +368,7 @@ export async function executeAssistantQuery(
       state: null,
       sessionId,
       failed: true,
+      cards: [],
     }
   }
 }

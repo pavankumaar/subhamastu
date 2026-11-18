@@ -1,33 +1,51 @@
+import { ArrowLeft, X } from 'lucide-react'
+import { useEffect, type ReactNode } from 'react'
+
 interface PageHeaderProps {
-  kicker: string
   title: string
   rightMeta?: string
 }
 
-export function PageHeader({ kicker, title, rightMeta = '' }: PageHeaderProps) {
+// Compact single-row screen header: title on the left, a small summary chip on the right.
+export function PageHeader({ title, rightMeta = '' }: PageHeaderProps) {
   return (
-    <header className="px-1 pb-4 pt-3.5">
-      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-taupe">
-        <span className="font-medium uppercase tracking-widest text-champagne">{kicker}</span>
-        <span className="tabular-nums">{rightMeta}</span>
-      </div>
-      <div className="flex items-end justify-between gap-2">
-        <h1 className="font-display text-[40px] font-semibold leading-none tracking-tight text-charcoal">
-          {title}
-        </h1>
-        <svg
-          className="mb-0.5 h-5 w-5 shrink-0 text-champagne/70"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.4"
-          aria-hidden
+    <header className="flex items-center justify-between gap-2 px-0.5 pb-2.5 pt-1">
+      <h1 className="text-xl font-bold tracking-tight text-charcoal">{title}</h1>
+      {rightMeta ? (
+        <span className="rounded-full border border-brass-line bg-silk px-2.5 py-1 text-[11px] font-semibold tabular-nums text-muted-taupe">
+          {rightMeta}
+        </span>
+      ) : null}
+    </header>
+  )
+}
+
+interface DetailHeaderProps {
+  backLabel: string
+  onBack: () => void
+  title: string
+  subtitle?: ReactNode
+  action?: ReactNode
+}
+
+export function DetailHeader({ backLabel, onBack, title, subtitle, action }: DetailHeaderProps) {
+  return (
+    <header className="space-y-1.5 pb-1 pt-1">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-muted-taupe hover:text-charcoal"
         >
-          <path d="M12 4C12 4 9.8 6.8 9.8 8.6C9.8 9.8 10.8 10.8 12 10.8C13.2 10.8 14.2 9.8 14.2 8.6C14.2 6.8 12 4 12 4Z" />
-          <path d="M5 14.5C5 17.6 8.1 19.8 12 19.8C15.9 19.8 19 17.6 19 14.5H5Z" />
-        </svg>
+          <ArrowLeft className="h-4 w-4" />
+          {backLabel}
+        </button>
+        {action}
       </div>
-      <div className="mt-4 h-px bg-brass-line" />
+      <div className="px-0.5">
+        <h1 className="text-xl font-bold leading-tight tracking-tight text-charcoal">{title}</h1>
+        {subtitle ? <p className="mt-0.5 text-xs text-muted-taupe">{subtitle}</p> : null}
+      </div>
     </header>
   )
 }
@@ -39,15 +57,71 @@ interface EmptyStateCardProps {
 
 export function EmptyStateCard({ title, subtitle }: EmptyStateCardProps) {
   return (
-    <article className="mx-1 mt-1.5 rounded-3xl border border-brass-line bg-silk p-6 text-center shadow-soft">
-      <div className="mx-auto mb-4 flex h-11 w-11 items-center justify-center rounded-full border border-brass-line bg-champagne-light text-champagne">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5">
+    <article className="mt-1 rounded-2xl border border-brass-line bg-silk p-5 text-center shadow-soft">
+      <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full border border-brass-line bg-champagne-light text-champagne">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5" aria-hidden>
           <path d="M12 3C12 3 9.5 6.2 9.5 8.2C9.5 9.6 10.6 10.7 12 10.7C13.4 10.7 14.5 9.6 14.5 8.2C14.5 6.2 12 3 12 3Z" />
           <path d="M4 14C4 17.5 7.6 20 12 20C16.4 20 20 17.5 20 14H4Z" />
         </svg>
       </div>
-      <h3 className="font-display text-3xl font-semibold text-charcoal">{title}</h3>
-      <p className="mx-auto mt-1.5 max-w-[230px] text-xs leading-relaxed text-muted-taupe">{subtitle}</p>
+      <h3 className="text-base font-bold text-charcoal">{title}</h3>
+      <p className="mx-auto mt-1 max-w-[250px] text-xs leading-relaxed text-muted-taupe">{subtitle}</p>
     </article>
   )
+}
+
+interface SheetModalProps {
+  title: string
+  onClose: () => void
+  children: ReactNode
+}
+
+// Bottom sheet on phones, centered dialog on larger screens. Tapping the backdrop or pressing Escape closes it.
+export function SheetModal({ title, onClose, children }: SheetModalProps) {
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKey)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      className="fixed inset-0 z-[2147483200] flex items-end justify-center bg-charcoal/40 px-2 pb-2 pt-10 sm:items-center sm:p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose()
+      }}
+      role="presentation"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="animate-modal-in flex max-h-[88dvh] w-full max-w-[480px] flex-col overflow-hidden rounded-3xl border border-brass-line bg-silk shadow-device"
+      >
+        <div className="flex items-center justify-between gap-2 border-b border-brass-line/70 px-4 py-3">
+          <h3 className="text-base font-bold text-charcoal">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-full p-1.5 text-muted-taupe hover:bg-ivory hover:text-charcoal"
+            aria-label="Close"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="clean-scroll overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  )
+}
+
+export function FieldLabel({ children }: { children: ReactNode }) {
+  return <label className="mb-1 block text-xs font-semibold text-muted-taupe">{children}</label>
 }
