@@ -226,7 +226,7 @@ export function SectionTitle({ title, count, action }: { title: string; count?: 
   )
 }
 
-// Full-width, thumb-friendly "add" action placed at the bottom of a section.
+// Full-width, thumb-friendly "add" action placed at the top of a section.
 export function SectionAddButton({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button

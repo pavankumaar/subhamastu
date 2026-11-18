@@ -414,6 +414,7 @@ export function InviteChecklistScreen({
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Invitees" count={selectedEvent.invitees.length} action={<span className="text-xs text-muted-taupe">{confirmedCount} confirmed</span>} />
+        <SectionAddButton label="Add invitees" onClick={() => openComposer('invite')} />
         {selectedEvent.invitees.length > 0 ? (
         <div className="space-y-1 rounded-2xl border border-brass-line bg-silk p-3 shadow-soft">
             <div className="relative">
@@ -462,14 +463,10 @@ export function InviteChecklistScreen({
           )}
         </div>
         ) : null}
-        <SectionAddButton label="Add invitees" onClick={() => openComposer('invite')} />
       </div>
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Items to buy" count={eventBuyItems.length} />
-        {eventBuyItems.map((todo) => (
-          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
-        ))}
         <form
           onSubmit={(formEvent) => {
             formEvent.preventDefault()
@@ -494,18 +491,22 @@ export function InviteChecklistScreen({
             <Plus className="h-5 w-5" />
           </button>
         </form>
+        {eventBuyItems.map((todo) => (
+          <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
+        ))}
       </div>
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="To-Dos" count={eventTodos.length} />
+        <SectionAddButton label="Add to-do" onClick={() => openComposer('todo')} />
         {eventTodos.map((todo) => (
           <TodoCard key={todo.id} todo={todo} onToggle={() => toggleTodo(todo.id)} onOpen={() => onOpenItem?.('todos', todo.id)} />
         ))}
-        <SectionAddButton label="Add to-do" onClick={() => openComposer('todo')} />
       </div>
 
       <div className="space-y-2.5 py-4">
         <SectionTitle title="Payments" count={eventPayments.length} />
+        <SectionAddButton label="Add payment" onClick={() => openComposer('payment')} />
         {eventPayments.map((expense) => (
           <PaymentCard
             key={expense.id}
@@ -517,11 +518,11 @@ export function InviteChecklistScreen({
             onMarkPaid={() => markExpensePaid(expense.id)}
           />
         ))}
-        <SectionAddButton label="Add payment" onClick={() => openComposer('payment')} />
       </div>
 
       <div className="space-y-2.5 pt-4">
         <SectionTitle title="Vendors" count={eventVendors.length} />
+        <SectionAddButton label="Add vendor" onClick={() => openComposer('vendor')} />
         {eventVendors.map((vendor) => (
           <VendorCard
             key={vendor.id}
@@ -530,7 +531,6 @@ export function InviteChecklistScreen({
             onMarkPaid={() => markVendorPaid(vendor.id)}
           />
         ))}
-        <SectionAddButton label="Add vendor" onClick={() => openComposer('vendor')} />
       </div>
       </div>
 
