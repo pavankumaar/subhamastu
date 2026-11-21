@@ -1,7 +1,8 @@
 import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, NotepadText, Users, X } from 'lucide-react'
-import { useCallback, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useCallback, useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { FieldLabel, ProfileMenu, SheetModal } from './components/ScreenChrome'
 import { ConnectGoogleSheet } from './auth/ConnectGoogleSheet'
+import { fetchGoogleClientId } from './auth/google'
 import { unlinkGoogle, type AuthProfile } from './auth/session'
 import { useWedding } from './context/useWedding'
 import { useBackLayer } from './hooks/useBackLayer'
@@ -87,6 +88,17 @@ function App({ profile, onLogout, onProfileChange }: AppProps) {
   const [form, setForm] = useState<QuickForm>(emptyQuickForm)
   const [isConnectGoogleOpen, setConnectGoogleOpen] = useState(false)
   const [accountNotice, setAccountNotice] = useState('')
+  const [isGoogleAvailable, setGoogleAvailable] = useState(false)
+
+  useEffect(() => {
+    let isActive = true
+    fetchGoogleClientId().then((clientId) => {
+      if (isActive) setGoogleAvailable(Boolean(clientId))
+    })
+    return () => {
+      isActive = false
+    }
+  }, [])
 
   async function disconnectGoogle() {
     try {
@@ -273,7 +285,7 @@ function App({ profile, onLogout, onProfileChange }: AppProps) {
             <ProfileMenu
               profile={profile}
               onLogout={onLogout}
-              onConnectGoogle={() => setConnectGoogleOpen(true)}
+              onConnectGoogle={isGoogleAvailable ? () => setConnectGoogleOpen(true) : undefined}
               onDisconnectGoogle={() => void disconnectGoogle()}
             />
           </div>

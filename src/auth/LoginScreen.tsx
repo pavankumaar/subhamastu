@@ -214,6 +214,12 @@ export function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => vo
             </button>
           </p>
         </section>
+
+        <footer className="text-center text-[11px] text-muted-taupe">
+          <a href="/privacy.html" className="inline-flex min-h-[40px] items-center px-2 underline-offset-2 hover:underline">
+            Privacy Policy
+          </a>
+        </footer>
       </div>
     </main>
   )
