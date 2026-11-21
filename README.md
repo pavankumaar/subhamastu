@@ -36,6 +36,20 @@ npm run build
 - `src/ai/weddingAssistantEngine.ts` — provider-agnostic request flow + session-aware history fetch
 - `server/index.js` — Mongo-backed planner API + agentic LLM orchestration
 
+## Sign-in
+
+Accounts use a username + 4-digit PIN, and optionally **Continue with Google**. Signed-in users can
+connect Google to an existing PIN account from the profile menu, so both methods open the same planner.
+
+To enable Google sign-in:
+
+1. In Google Cloud Console create an OAuth client of type **Web application**.
+2. Add every site origin under **Authorized JavaScript origins** (e.g. `https://planner.subhamastu.here.now`, `http://localhost:4173`).
+3. Set `GOOGLE_CLIENT_ID` on the API (`.env` locally, Render dashboard in production). No client secret is needed:
+   the API verifies Google's signed ID token itself (`server/googleAuth.js`).
+
+Without `GOOGLE_CLIENT_ID` the Google button is simply hidden.
+
 ## Design Tokens
 
 Configured in:

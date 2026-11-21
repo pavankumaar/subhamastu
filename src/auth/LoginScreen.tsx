@@ -1,6 +1,7 @@
 import { AlertTriangle, LockKeyhole } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { getLastUsername, loginWithPin, registerAccount, type AuthSession } from './session'
+import { GoogleSignInButton } from './GoogleSignInButton'
+import { getLastUsername, loginWithGoogle, loginWithPin, registerAccount, type AuthSession } from './session'
 
 type Mode = 'login' | 'register'
 
@@ -68,6 +69,18 @@ export function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => vo
     }
   }
 
+  async function handleGoogle(credential: string) {
+    setSubmitting(true)
+    setError('')
+    try {
+      onLogin(await loginWithGoogle(credential))
+    } catch (googleFailure) {
+      setError(googleFailure instanceof Error ? googleFailure.message : 'Google sign-in failed. Please try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const isRegister = mode === 'register'
 
   return (
@@ -92,7 +105,11 @@ export function LoginScreen({ onLogin }: { onLogin: (session: AuthSession) => vo
               : 'Sign in to continue planning your wedding.'}
           </p>
 
-          <div className="mt-5 grid grid-cols-2 rounded-full border border-brass-line bg-silk p-1" role="tablist">
+          <div className="mt-5">
+            <GoogleSignInButton onCredential={handleGoogle} disabled={isSubmitting} dividerLabel="or use a username & PIN" />
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 rounded-full border border-brass-line bg-silk p-1" role="tablist">
             {(['login', 'register'] as const).map((tab) => (
               <button
                 key={tab}

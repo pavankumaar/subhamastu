@@ -1,8 +1,18 @@
 import { apiUrl } from '../apiBase'
 
+export interface AuthProfile {
+  id: string
+  name: string
+  displayName?: string
+  email?: string
+  picture?: string
+  google?: boolean
+  hasPin?: boolean
+}
+
 export interface AuthSession {
   token: string
-  profile: { id: string; name: string }
+  profile: AuthProfile
 }
 
 const storageKey = 'subhamastu.auth'
@@ -83,6 +93,54 @@ export function loginWithPin(username: string, pin: string) {
 
 export function registerAccount(username: string, pin: string) {
   return authenticate('/api/auth/register', username, pin)
+}
+
+function errorFrom(payload: Record<string, unknown>) {
+  return new Error(typeof payload.error === 'string' ? payload.error : 'Something went wrong. Please try again.')
+}
+
+export async function loginWithGoogle(credential: string): Promise<AuthSession & { created: boolean }> {
+  const response = await fetch(apiUrl('/api/auth/google'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  })
+  const payload = await readJson(response)
+  if (!response.ok) throw errorFrom(payload)
+  const session = { token: String(payload.token), profile: payload.profile as AuthProfile }
+  saveSession(session)
+  window.localStorage.setItem(lastUsernameKey, session.profile.name)
+  return { ...session, created: payload.created === true }
+}
+
+// Keeps the stored session's profile in sync after linking/unlinking or on app start.
+function storeProfile(profile: AuthProfile) {
+  const session = loadSession()
+  if (session) saveSession({ ...session, profile })
+  return profile
+}
+
+async function profileRequest(path: string, init: RequestInit = {}) {
+  const response = await authFetch(path, init)
+  const payload = await readJson(response)
+  if (!response.ok) throw errorFrom(payload)
+  return storeProfile(payload.profile as AuthProfile)
+}
+
+export function refreshProfile() {
+  return profileRequest('/api/auth/me')
+}
+
+export function linkGoogle(credential: string) {
+  return profileRequest('/api/auth/google/link', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential }),
+  })
+}
+
+export function unlinkGoogle() {
+  return profileRequest('/api/auth/google/unlink', { method: 'POST' })
 }
 
 export async function logout() {

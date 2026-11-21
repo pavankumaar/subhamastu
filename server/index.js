@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { MongoClient } from 'mongodb'
 import { applyAssistantActions, buildPlannerSnapshot, describeTools, resolveCards } from './assistantTools.js'
 import { AuthError, createAuth, createRateLimiter } from './auth.js'
+import { GoogleTokenError, verifyGoogleIdToken } from './googleAuth.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 4000)
@@ -47,6 +48,9 @@ const auth = createAuth(getMongoDb, {
   usersCollection: process.env.MONGODB_USERS_COLLECTION?.trim() || 'users',
   sessionsCollection: process.env.MONGODB_SESSIONS_COLLECTION?.trim() || 'auth_sessions',
 })
+
+// OAuth "Web application" client ID from Google Cloud. Public by design; unset = Google sign-in hidden.
+const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim() || ''
 
 // Per-IP limits so nobody can mass-create accounts or spray PIN guesses across usernames.
 const registerLimiter = createRateLimiter({
@@ -168,8 +172,54 @@ app.post('/api/auth/logout', async (request, response) => {
   }
 })
 
+app.get('/api/auth/config', (_request, response) => {
+  response.json({ googleClientId })
+})
+
+async function verifiedGoogleIdentity(request) {
+  if (!googleClientId) throw new AuthError(503, 'Google sign-in is not set up yet.')
+  const payload = isRecord(request.body) ? request.body : {}
+  try {
+    return await verifyGoogleIdToken(payload.credential, googleClientId)
+  } catch (error) {
+    if (error instanceof GoogleTokenError) throw new AuthError(401, error.message)
+    throw error
+  }
+}
+
+app.post('/api/auth/google', async (request, response) => {
+  try {
+    loginLimiter(request.ip)
+    const google = await verifiedGoogleIdentity(request)
+    const result = await auth.loginWithGoogle(google)
+    response.status(result.created ? 201 : 200).json(result)
+  } catch (error) {
+    respondWithAuthError(response, error)
+  }
+})
+
+const requireUser = auth.requireAuth(respondWithAuthError)
+
+app.post('/api/auth/google/link', requireUser, async (request, response) => {
+  try {
+    loginLimiter(request.ip)
+    const google = await verifiedGoogleIdentity(request)
+    response.json(await auth.linkGoogle(request.user.id, google))
+  } catch (error) {
+    respondWithAuthError(response, error)
+  }
+})
+
+app.post('/api/auth/google/unlink', requireUser, async (request, response) => {
+  try {
+    response.json(await auth.unlinkGoogle(request.user.id))
+  } catch (error) {
+    respondWithAuthError(response, error)
+  }
+})
+
 // Everything below requires a logged-in user; each user only ever touches their own data.
-app.use(['/api/auth/me', '/api/planner', '/api/assistant'], auth.requireAuth(respondWithAuthError))
+app.use(['/api/auth/me', '/api/planner', '/api/assistant'], requireUser)
 
 app.get('/api/auth/me', (request, response) => {
   response.json({ profile: request.user })

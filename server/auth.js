@@ -32,7 +32,22 @@ export function normalizeUsername(value) {
 }
 
 function publicUser(user) {
-  return { id: user._id, name: user.username }
+  return {
+    id: user._id,
+    name: user.username,
+    displayName: user.displayName || '',
+    email: user.email || '',
+    picture: user.picture || '',
+    google: Boolean(user.googleSub),
+    hasPin: Boolean(user.pinHash),
+  }
+}
+
+// Turns "Pavan.K+wedding@gmail.com" into a valid username base like "pavan.k".
+function usernameBaseFromEmail(email) {
+  const local = (email.split('@')[0] ?? '').toLowerCase().split('+')[0]
+  const cleaned = local.replace(/[^a-z0-9._]/g, '').replace(/^[._]+|[._]+$/g, '').slice(0, 16)
+  return cleaned.length >= 3 ? cleaned : `${cleaned || 'guest'}${'0'.repeat(Math.max(0, 3 - (cleaned || 'guest').length))}`
 }
 
 function validatePin(pin) {
@@ -68,9 +83,11 @@ export function createAuth(getDb, { usersCollection, sessionsCollection }) {
   }
 
   async function ensureAuthSetup() {
-    const { sessions } = await collections()
+    const { sessions, users } = await collections()
     await sessions.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
     await sessions.createIndex({ userId: 1 })
+    // One planner account per Google account; accounts without Google are not indexed.
+    await users.createIndex({ googleSub: 1 }, { unique: true, partialFilterExpression: { googleSub: { $type: 'string' } } })
   }
 
   async function createSession(user) {
@@ -122,8 +139,9 @@ export function createAuth(getDb, { usersCollection, sessionsCollection }) {
     const { users } = await collections()
     const user = USERNAME_PATTERN.test(username) ? await users.findOne({ _id: username }) : null
 
-    if (!user) {
+    if (!user || !user.pinHash) {
       // Spend the same hashing time as a real check so response timing doesn't reveal valid usernames.
+      // Google-only accounts have no PIN and are rejected the same way.
       await hashPin(pin, DUMMY_SALT)
       throw new AuthError(401, 'Incorrect username or PIN.')
     }
@@ -154,6 +172,83 @@ export function createAuth(getDb, { usersCollection, sessionsCollection }) {
 
     await users.updateOne({ _id: username }, { $set: { failedAttempts: 0, lockedUntil: null, lastLoginAt: new Date() } })
     return { token: await createSession(user), profile: publicUser(user) }
+  }
+
+  function googleFields(google) {
+    return { googleSub: google.sub, email: google.email, displayName: google.name, picture: google.picture }
+  }
+
+  // Signs in with a verified Google identity, creating a new planner account on first use.
+  async function loginWithGoogle(google) {
+    const { users } = await collections()
+    const existing = await users.findOneAndUpdate(
+      { googleSub: google.sub },
+      { $set: { ...googleFields(google), lastLoginAt: new Date() } },
+      { returnDocument: 'after' },
+    )
+    if (existing) {
+      return { token: await createSession(existing), profile: publicUser(existing), created: false }
+    }
+
+    const base = usernameBaseFromEmail(google.email)
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const suffix = attempt === 0 ? '' : attempt < 20 ? String(attempt + 1) : randomBytes(2).toString('hex')
+      const username = `${base.slice(0, 20 - suffix.length)}${suffix}`
+      const user = {
+        _id: username,
+        username,
+        ...googleFields(google),
+        failedAttempts: 0,
+        lockedUntil: null,
+        createdAt: new Date(),
+        lastLoginAt: new Date(),
+      }
+      try {
+        await users.insertOne(user)
+        return { token: await createSession(user), profile: publicUser(user), created: true }
+      } catch (error) {
+        if (error?.code !== 11000) throw error
+        // Same Google account created concurrently (e.g. double tap): sign into that one instead.
+        if (error?.keyPattern?.googleSub) return loginWithGoogle(google)
+      }
+    }
+    throw new AuthError(409, 'Could not create a username for this Google account. Please try again.')
+  }
+
+  // Connects Google to the signed-in account so either sign-in method opens the same planner.
+  async function linkGoogle(userId, google) {
+    const { users } = await collections()
+    const owner = await users.findOne({ googleSub: google.sub }, { projection: { _id: 1 } })
+    if (owner && owner._id !== userId) {
+      throw new AuthError(409, `This Google account is already used by the planner account "${owner._id}".`)
+    }
+    try {
+      const user = await users.findOneAndUpdate(
+        { _id: userId },
+        { $set: googleFields(google) },
+        { returnDocument: 'after' },
+      )
+      if (!user) throw new AuthError(404, 'Account not found.')
+      return { profile: publicUser(user) }
+    } catch (error) {
+      if (error?.code === 11000) throw new AuthError(409, 'This Google account is already used by another planner account.')
+      throw error
+    }
+  }
+
+  async function unlinkGoogle(userId) {
+    const { users } = await collections()
+    const user = await users.findOne({ _id: userId })
+    if (!user) throw new AuthError(404, 'Account not found.')
+    if (!user.pinHash) {
+      throw new AuthError(400, 'This account signs in only with Google, so Google cannot be disconnected.')
+    }
+    const updated = await users.findOneAndUpdate(
+      { _id: userId },
+      { $unset: { googleSub: '', email: '', displayName: '', picture: '' } },
+      { returnDocument: 'after' },
+    )
+    return { profile: publicUser(updated) }
   }
 
   function readToken(request) {
@@ -209,5 +304,17 @@ export function createAuth(getDb, { usersCollection, sessionsCollection }) {
     }
   }
 
-  return { ensureAuthSetup, register, login, logout, readToken, resolveUser, consumeAiQuota, requireAuth }
+  return {
+    ensureAuthSetup,
+    register,
+    login,
+    loginWithGoogle,
+    linkGoogle,
+    unlinkGoogle,
+    logout,
+    readToken,
+    resolveUser,
+    consumeAiQuota,
+    requireAuth,
+  }
 }

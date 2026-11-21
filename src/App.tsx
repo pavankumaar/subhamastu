@@ -1,6 +1,8 @@
 import { AlertTriangle, CalendarCheck2, CirclePlus, Landmark, NotepadText, Users, X } from 'lucide-react'
 import { useCallback, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { FieldLabel, ProfileMenu, SheetModal } from './components/ScreenChrome'
+import { ConnectGoogleSheet } from './auth/ConnectGoogleSheet'
+import { unlinkGoogle, type AuthProfile } from './auth/session'
 import { useWedding } from './context/useWedding'
 import { useBackLayer } from './hooks/useBackLayer'
 import type { ItemOrigin, ItemTab } from './navigation'
@@ -70,11 +72,12 @@ function DiyaIcon({ className }: { className: string }) {
 }
 
 interface AppProps {
-  profile: { id: string; name: string }
+  profile: AuthProfile
   onLogout: () => void
+  onProfileChange: (profile: AuthProfile) => void
 }
 
-function App({ profile, onLogout }: AppProps) {
+function App({ profile, onLogout, onProfileChange }: AppProps) {
   const { data, addExpense, addTodo, addGuestEvent, addVendor, syncError } = useWedding()
   const [activeTab, setActiveTab] = useState<AppTab>('todos')
   const [focus, setFocus] = useState<{ tab: ItemTab; id: string; nonce: number; origin?: ItemOrigin } | null>(null)
@@ -82,6 +85,17 @@ function App({ profile, onLogout }: AppProps) {
   const [isQuickActionVisible, setQuickActionVisible] = useState(true)
   const [quickError, setQuickError] = useState('')
   const [form, setForm] = useState<QuickForm>(emptyQuickForm)
+  const [isConnectGoogleOpen, setConnectGoogleOpen] = useState(false)
+  const [accountNotice, setAccountNotice] = useState('')
+
+  async function disconnectGoogle() {
+    try {
+      onProfileChange(await unlinkGoogle())
+      setAccountNotice('Google disconnected. Sign in with your username and PIN.')
+    } catch (failure) {
+      setAccountNotice(failure instanceof Error ? failure.message : 'Could not disconnect Google.')
+    }
+  }
 
   const activeTabConfig = tabs.find((tab) => tab.key === activeTab)
 
@@ -256,9 +270,36 @@ function App({ profile, onLogout }: AppProps) {
           <span className="text-lg font-extrabold leading-none tracking-tight text-charcoal">Subhamastu</span>
           <span className="border-l border-brass-line pl-2 text-[11px] font-medium leading-none text-muted-taupe">Wedding Planner</span>
           <div className="ml-auto flex items-center">
-            <ProfileMenu name={profile.name} onLogout={onLogout} />
+            <ProfileMenu
+              profile={profile}
+              onLogout={onLogout}
+              onConnectGoogle={() => setConnectGoogleOpen(true)}
+              onDisconnectGoogle={() => void disconnectGoogle()}
+            />
           </div>
         </header>
+
+        {accountNotice ? (
+          <div
+            role="status"
+            className="mx-1.5 mt-2 flex shrink-0 items-start justify-between gap-2 rounded-xl border border-brass-line bg-silk px-3 py-2 text-xs leading-snug text-charcoal"
+          >
+            <span>{accountNotice}</span>
+            <button type="button" onClick={() => setAccountNotice('')} className="shrink-0 font-semibold text-muted-taupe" aria-label="Dismiss">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        ) : null}
+
+        {isConnectGoogleOpen ? (
+          <ConnectGoogleSheet
+            onConnected={(next) => {
+              onProfileChange(next)
+              setAccountNotice(`Google connected${next.email ? ` (${next.email})` : ''}. You can now use "Continue with Google" to sign in.`)
+            }}
+            onClose={() => setConnectGoogleOpen(false)}
+          />
+        ) : null}
 
         {syncError ? (
           <div
